@@ -1,3 +1,68 @@
 spring:
   application:
     name: url-service
+
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:5432/${DB_NAME:shortlyai_urls}
+    username: ${DB_USER:postgres}
+    password: ${DB_PASSWORD:postgres}
+    hikari:
+      maximum-pool-size: 20           # higher — URL redirect is high traffic
+      minimum-idle: 5
+      connection-timeout: 30000
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.xml
+    enabled: true
+
+  # Redis — cache-aside: check Redis before hitting Postgres on redirect
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+
+  # Kafka — publish url.created + url.deleted events
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: all                       # wait for all replicas — no data loss
+
+server:
+  port: 8082
+
+# JWT — validate token forwarded by gateway
+jwt:
+  secret: ${JWT_SECRET:dev-secret-key-change-in-prod-must-be-256-bits}
+
+# OpenFeign — base URL for ai-service calls
+ai-service:
+  url: ${AI_SERVICE_URL:http://localhost:8084}
+
+# URL config
+url:
+  base-domain: ${BASE_DOMAIN:http://localhost:8082}  # prepended to slug
+  slug-length: 7                      # Base62 slug character count
+  default-expiry-days: 30             # URLs expire after 30 days if no expiry set
+  cache-ttl-seconds: 3600             # Redis TTL for cached URLs
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, prometheus, info
+
+logging:
+  level:
+    root: INFO
+    com.shortlyai: DEBUG

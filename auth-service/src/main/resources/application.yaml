@@ -1,3 +1,64 @@
 spring:
   application:
     name: auth-service
+
+  # Postgres — users, roles, refresh tokens
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:5432/${DB_NAME:shortlyai_auth}
+    username: ${DB_USER:postgres}
+    password: ${DB_PASSWORD:postgres}
+    hikari:
+      maximum-pool-size: 10           # max DB connections in pool
+      minimum-idle: 2                 # keep 2 warm at all times
+      connection-timeout: 30000       # fail fast if no connection in 30s
+
+  jpa:
+    hibernate:
+      ddl-auto: validate              # Liquibase owns schema — JPA only validates
+    show-sql: false                   # never true in prod — use logs instead
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+
+  # Liquibase — runs migrations on startup before app accepts traffic
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.xml
+    enabled: true
+
+  # Redis — refresh token store + blacklisted access tokens
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+
+  # OAuth2 Google — client credentials from Google Cloud Console
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: ${GOOGLE_CLIENT_ID:}
+            client-secret: ${GOOGLE_CLIENT_SECRET:}
+            scope: email, profile
+
+server:
+  port: 8081
+
+# JWT config — secret shared with gateway (same env var)
+jwt:
+  secret: ${JWT_SECRET:dev-secret-key-change-in-prod-must-be-256-bits}
+  access-token-expiry-ms: 900000      # 15 minutes
+  refresh-token-expiry-ms: 604800000  # 7 days
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, prometheus, info
+
+logging:
+  level:
+    root: INFO
+    com.shortlyai: DEBUG

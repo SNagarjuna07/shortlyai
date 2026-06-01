@@ -1,3 +1,33 @@
 spring:
   application:
     name: ai-service
+
+  # Spring AI — OpenAI key + model config
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY:}
+      chat:
+        options:
+          model: gpt-4o-mini          # cheap + fast — sufficient for classification
+          temperature: 0.3            # low = deterministic, good for classification
+          max-tokens: 500             # classification responses are short
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
+server:
+  port: 8084
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, prometheus, info
+
+logging:
+  level:
+    root: info
+    com.shortlyai: DEBUG
