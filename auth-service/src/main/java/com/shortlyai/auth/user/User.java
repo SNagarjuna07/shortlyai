@@ -1,0 +1,74 @@
+package com.shortlyai.auth.user;
+
+import jakarta.persistence.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+import java.time.Instant;
+import java.util.UUID;
+
+// @Entity — tells JPA this class maps to a DB table
+// @Table — explicitly names the table (never rely on JPA default naming)
+@Entity
+@Table(name = "users")
+@Getter
+@Setter
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class User {
+
+    // UUID primary key — safer than auto-increment (no enumeration attacks)
+    // gen_random_uuid() runs in DB — matches our Liquibase migration
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
+
+    // nullable = false enforces NOT NULL at JPA layer (Liquibase already does it at DB layer)
+    // unique = true enforces UNIQUE at JPA layer — double protection
+    @Column(nullable = false, unique = true, length = 255)
+    private String email;
+
+    // nullable — OAuth2 Google users have no password
+    @Column(length = 255)
+    private String password;
+
+    @Column(nullable = false, length = 255)
+    private String name;
+
+    // @Enumerated(STRING) — stores "ROLE_FREE" in DB, not "0"
+    // Never use ORDINAL — adding enum values breaks existing data
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 50)
+    private Role role;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 50)
+    private Provider provider;
+
+    @Column(nullable = false)
+    private boolean verified;
+
+    // Instant = timezone-safe — always UTC in DB, maps to TIMESTAMPTZ
+    @Column(nullable = false, updatable = false)
+    private Instant createdAt;
+
+    // updatable = false on createdAt — JPA never changes it after insert
+    @Column(nullable = false)
+    private Instant updatedAt;
+
+    // @PrePersist — runs automatically before INSERT
+    @PrePersist
+    protected void onCreate() {
+        createdAt = Instant.now();  // set on first save
+        updatedAt = Instant.now();
+    }
+
+    // @PreUpdate — runs automatically before UPDATE
+    @PreUpdate
+    protected void onUpdate() {
+        updatedAt = Instant.now();  // refresh on every update
+    }
+}

@@ -12,6 +12,7 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
+      PGTZ: Asia/Kolkata      # add this line — correct IANA name for IST
     ports:
       - "5432:5432"              # host:container — connect via localhost:5432
     volumes:
