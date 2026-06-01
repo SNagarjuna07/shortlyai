@@ -59,6 +59,10 @@ public class User {
     @Column(nullable = false)
     private Instant updatedAt;
 
+    @Version
+    @Column(nullable = false)
+    private Long version;  // JPA manages this — never set it manually
+
     // @PrePersist — runs automatically before INSERT
     @PrePersist
     protected void onCreate() {
