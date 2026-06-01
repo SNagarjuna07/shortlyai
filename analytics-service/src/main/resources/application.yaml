@@ -1,6 +1,10 @@
+api:
+  prefix: /api/v1
+
 spring:
   application:
     name: analytics-service
+
 
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:5432/${DB_NAME:shortlyai_analytics}

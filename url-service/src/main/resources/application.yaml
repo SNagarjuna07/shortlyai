@@ -1,3 +1,6 @@
+api:
+  prefix: /api/v1
+
 spring:
   application:
     name: url-service
@@ -64,5 +67,5 @@ management:
 
 logging:
   level:
-    root: INFO
+    root: info
     com.shortlyai: DEBUG
