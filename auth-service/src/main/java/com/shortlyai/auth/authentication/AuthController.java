@@ -3,8 +3,10 @@ package com.shortlyai.auth.authentication;
 
 import com.shortlyai.auth.dto.AuthResponse;
 import com.shortlyai.auth.dto.LoginRequest;
+import com.shortlyai.auth.dto.RegisterRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -22,6 +24,14 @@ public class AuthController {
     public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest loginRequest) {
 
         return ResponseEntity.ok(authService.login(loginRequest));
+    }
+
+    @PostMapping("/register")
+    public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest registerRequest) {
+
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(authService.register(registerRequest));
     }
 
 }

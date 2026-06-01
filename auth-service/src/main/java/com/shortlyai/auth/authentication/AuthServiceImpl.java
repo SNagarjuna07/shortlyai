@@ -1,12 +1,12 @@
 package com.shortlyai.auth.authentication;
 
+import com.shortlyai.auth.common.exception.EmailAlreadyExistsException;
 import com.shortlyai.auth.common.exception.InvalidCredentialsException;
 import com.shortlyai.auth.dto.AuthResponse;
 import com.shortlyai.auth.dto.LoginRequest;
+import com.shortlyai.auth.dto.RegisterRequest;
 import com.shortlyai.auth.security.JwtUtil;
-import com.shortlyai.auth.user.User;
-import com.shortlyai.auth.user.UserMapper;
-import com.shortlyai.auth.user.UserRepository;
+import com.shortlyai.auth.user.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -24,7 +24,6 @@ public class AuthServiceImpl implements AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
     private final UserMapper userMapper;
-
 
     @Override
     public AuthResponse login(LoginRequest request) {
@@ -57,5 +56,37 @@ public class AuthServiceImpl implements AuthService {
 
         // Step 4 — build and return response
         return new AuthResponse(accessToken, refreshToken, userMapper.toResponse(user));
+    }
+
+    @Override
+    public AuthResponse register(RegisterRequest registerRequest) {
+
+        log.info("Register attempt for email: {}", registerRequest.email());
+
+        if (userRepository.existsByEmail(registerRequest.email())) {
+            throw new EmailAlreadyExistsException("An account exists already with this email");
+        }
+
+        User user = new User();
+
+        user.setName(registerRequest.name());
+        user.setEmail(registerRequest.email());
+        user.setPassword(passwordEncoder.encode(registerRequest.password()));
+        user.setRole(Role.ROLE_FREE);
+        user.setProvider(Provider.LOCAL);
+        user.setVerified(false);
+
+        User savedUser = userRepository.save(user);
+
+        String accessToken = jwtUtil.generateAccessToken(
+                savedUser.getId(), savedUser.getEmail(), savedUser.getRole().name()
+        );
+        String refreshToken = jwtUtil.generateRefreshToken(
+                savedUser.getId(), savedUser.getEmail(), savedUser.getRole().name()
+        );
+
+        log.info("Registration successful for userId: {}", savedUser.getId());
+
+        return new AuthResponse(accessToken, refreshToken, userMapper.toResponse(savedUser));
     }
 }
