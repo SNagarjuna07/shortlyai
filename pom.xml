@@ -129,7 +129,6 @@
     <pluginManagement>
       <plugins>
 
-        <!-- Compiles Java 25, enables preview features -->
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-compiler-plugin</artifactId>
@@ -137,24 +136,21 @@
             <source>${java.version}</source>
             <target>${java.version}</target>
             <compilerArgs>
-              <!-- enable Java preview features (e.g. value types in J25) -->
               <arg>--enable-preview</arg>
             </compilerArgs>
-          </configuration>
-        </plugin>
 
-        <!-- Spring Boot plugin — creates executable fat jar per service -->
-        <plugin>
-          <groupId>org.springframework.boot</groupId>
-          <artifactId>spring-boot-maven-plugin</artifactId>
-          <configuration>
-            <!-- strip Lombok from final jar -->
-            <excludes>
-              <exclude>
+            <!-- ADD THIS — explicitly tells the compiler to run Lombok's processor.
+                 Required when -enable-preview is active. Without this block,
+                 Maven skips classpath processor discovery and @Slf4j never runs. -->
+            <annotationProcessorPaths>
+              <path>
                 <groupId>org.projectlombok</groupId>
                 <artifactId>lombok</artifactId>
-              </exclude>
-            </excludes>
+                <!-- lombok.version is already pinned by Spring Boot BOM — reuse it -->
+                <version>${lombok.version}</version>
+              </path>
+            </annotationProcessorPaths>
+
           </configuration>
         </plugin>
 
