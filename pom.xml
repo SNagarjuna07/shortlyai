@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+         https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+  <modelVersion>4.0.0</modelVersion>
+
+  <!-- ── PARENT: Spring Boot BOM — imports all Spring version pins ── -->
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>4.0.0</version>
+    <relativePath/> <!-- fetch from Maven Central, not local path -->
+  </parent>
+
+  <!-- ── THIS artifact is the multi-module root (packaging = pom, not jar) ── -->
+  <groupId>com.shortlyai</groupId>
+  <artifactId>shortlyai</artifactId>
+  <version>1.0.0-SNAPSHOT</version>
+  <packaging>pom</packaging>
+  <name>ShortlyAI</name>
+
+  <!-- ── 5 child modules — Maven builds them in this order ── -->
+  <modules>
+    <module>api-gateway</module>
+    <module>auth-service</module>
+    <module>url-service</module>
+    <module>analytics-service</module>
+    <module>ai-service</module>
+  </modules>
+
+  <!-- ── All version numbers live here — change once, applies everywhere ── -->
+  <properties>
+    <java.version>25</java.version>
+    <spring-cloud.version>2025.0.0</spring-cloud.version>
+    <spring-ai.version>1.0.0</spring-ai.version>
+    <jjwt.version>0.12.6</jjwt.version>
+    <resilience4j.version>2.3.0</resilience4j.version>
+    <shedlock.version>6.0.1</shedlock.version>
+    <liquibase.version>4.29.0</liquibase.version>
+    <micrometer-tracing.version>1.4.0</micrometer-tracing.version>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+
+  <!-- ── dependencyManagement: pins versions but does NOT add to classpath.
+       Children opt-in by declaring the dep WITHOUT a version tag. ── -->
+  <dependencyManagement>
+    <dependencies>
+
+      <!-- Spring Cloud BOM — Gateway, OpenFeign, Circuit Breaker versions -->
+      <dependency>
+        <groupId>org.springframework.cloud</groupId>
+        <artifactId>spring-cloud-dependencies</artifactId>
+        <version>${spring-cloud.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+
+      <!-- Spring AI BOM — all AI starter versions -->
+      <dependency>
+        <groupId>org.springframework.ai</groupId>
+        <artifactId>spring-ai-bom</artifactId>
+        <version>${spring-ai.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+
+      <!-- JWT — token creation + validation -->
+      <dependency>
+        <groupId>io.jsonwebtoken</groupId>
+        <artifactId>jjwt-api</artifactId>
+        <version>${jjwt.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.jsonwebtoken</groupId>
+        <artifactId>jjwt-impl</artifactId>
+        <version>${jjwt.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.jsonwebtoken</groupId>
+        <artifactId>jjwt-jackson</artifactId>
+        <version>${jjwt.version}</version>
+      </dependency>
+
+      <!-- Resilience4j — circuit breaker, retry, bulkhead -->
+      <dependency>
+        <groupId>io.github.resilience4j</groupId>
+        <artifactId>resilience4j-spring-boot3</artifactId>
+        <version>${resilience4j.version}</version>
+      </dependency>
+
+      <!-- ShedLock — prevents scheduled jobs running on multiple instances -->
+      <dependency>
+        <groupId>net.javacrumbs.shedlock</groupId>
+        <artifactId>shedlock-spring</artifactId>
+        <version>${shedlock.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>net.javacrumbs.shedlock</groupId>
+        <artifactId>shedlock-provider-redis-spring</artifactId>
+        <version>${shedlock.version}</version>
+      </dependency>
+
+    </dependencies>
+  </dependencyManagement>
+
+  <!-- ── dependencies here go to ALL 5 services — keep minimal ── -->
+  <dependencies>
+
+    <!-- Lombok — @Slf4j, @Builder, etc. (records replace most of this) -->
+    <dependency>
+      <groupId>org.projectlombok</groupId>
+      <artifactId>lombok</artifactId>
+      <optional>true</optional> <!-- not leaked to downstream deps -->
+    </dependency>
+
+    <!-- JUnit 5 + Mockito — every service needs tests -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+
+  </dependencies>
+
+  <build>
+    <!-- pluginManagement: pins plugin versions, children inherit without re-declaring -->
+    <pluginManagement>
+      <plugins>
+
+        <!-- Compiles Java 25, enables preview features -->
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-compiler-plugin</artifactId>
+          <configuration>
+            <source>${java.version}</source>
+            <target>${java.version}</target>
+            <compilerArgs>
+              <!-- enable Java preview features (e.g. value types in J25) -->
+              <arg>--enable-preview</arg>
+            </compilerArgs>
+          </configuration>
+        </plugin>
+
+        <!-- Spring Boot plugin — creates executable fat jar per service -->
+        <plugin>
+          <groupId>org.springframework.boot</groupId>
+          <artifactId>spring-boot-maven-plugin</artifactId>
+          <configuration>
+            <!-- strip Lombok from final jar -->
+            <excludes>
+              <exclude>
+                <groupId>org.projectlombok</groupId>
+                <artifactId>lombok</artifactId>
+              </exclude>
+            </excludes>
+          </configuration>
+        </plugin>
+
+      </plugins>
+    </pluginManagement>
+  </build>
+
+</project>
