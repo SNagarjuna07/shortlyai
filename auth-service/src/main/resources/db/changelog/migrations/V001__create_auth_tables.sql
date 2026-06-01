@@ -8,6 +8,7 @@ CREATE TABLE users (
     role        VARCHAR(50)  NOT NULL DEFAULT 'ROLE_FREE',   -- ROLE_FREE, ROLE_PRO, ROLE_ADMIN
     provider    VARCHAR(50)  NOT NULL DEFAULT 'LOCAL',       -- LOCAL or GOOGLE
     verified    BOOLEAN      NOT NULL DEFAULT FALSE,         -- email verification gate
+     version     BIGINT       NOT NULL DEFAULT 0,             -- optimistic locking — JPA checks this on every update
     created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     updated_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
