@@ -1,0 +1,86 @@
+# docker-compose.yml — lives at project root
+# Spins up all infra locally. Services (Java) run in IntelliJ, not here.
+
+version: '3.8'
+
+services:
+
+  # ── POSTGRES ────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16
+    container_name: shortlyai-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"              # host:container — connect via localhost:5432
+    volumes:
+      - postgres-data:/var/lib/postgresql/data          # persist data across restarts
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql  # create 3 DBs on first start
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── REDIS ────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine             # alpine = smaller image
+    container_name: shortlyai-redis
+    command: redis-server --requirepass redis123   # password matches yml config
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data              # persist Redis data across restarts
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "redis123", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── ZOOKEEPER — Kafka needs this to manage brokers ───────────────────
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
+    container_name: shortlyai-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+
+  # ── KAFKA ────────────────────────────────────────────────────────────
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: shortlyai-kafka
+    depends_on:
+      - zookeeper                     # kafka starts only after zookeeper is up
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092   # address Java services connect to
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1               # 1 = single broker, fine for dev
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: true                   # topics auto-created on first publish
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  # ── KAFKA UI — browse topics + messages visually ─────────────────────
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: shortlyai-kafka-ui
+    depends_on:
+      - kafka
+    ports:
+      - "8090:8080"                   # open localhost:8090 in browser
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+
+# ── VOLUMES — named volumes persist data when containers restart ───────
+volumes:
+  postgres-data:
+  redis-data:
