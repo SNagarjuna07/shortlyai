@@ -141,4 +141,16 @@ public class AuthServiceImpl implements AuthService {
 
         return new AuthResponse(accessToken, refreshToken, userMapper.toResponse(user));
     }
+
+    @Override
+    public void logout(RefreshTokenRequest request) {
+
+        if (!refreshTokenService.exists(request.refreshToken())) {
+            throw new InvalidTokenException("Invalid or already expired refresh token");
+        }
+
+        refreshTokenService.delete(request.refreshToken());
+
+        log.info("Logout successful");
+    }
 }

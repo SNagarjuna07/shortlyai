@@ -16,5 +16,9 @@ public interface AuthService {
     // register - for new users
     AuthResponse register(RegisterRequest registerRequest);
 
+    // Generating new refresh tokens
     AuthResponse refresh(RefreshTokenRequest refreshTokenRequest);
+
+    // Allows user to logout
+    void logout(RefreshTokenRequest refreshTokenRequest);
 }
