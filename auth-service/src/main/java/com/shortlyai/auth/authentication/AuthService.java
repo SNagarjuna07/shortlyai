@@ -2,6 +2,7 @@ package com.shortlyai.auth.authentication;
 
 import com.shortlyai.auth.dto.AuthResponse;
 import com.shortlyai.auth.dto.LoginRequest;
+import com.shortlyai.auth.dto.RefreshTokenRequest;
 import com.shortlyai.auth.dto.RegisterRequest;
 
 // Interface — defines the contract, hides implementation details
@@ -12,5 +13,8 @@ public interface AuthService {
     // Login — validates credentials, returns tokens + user info
     AuthResponse login(LoginRequest request);
 
+    // register - for new users
     AuthResponse register(RegisterRequest registerRequest);
+
+    AuthResponse refresh(RefreshTokenRequest refreshTokenRequest);
 }

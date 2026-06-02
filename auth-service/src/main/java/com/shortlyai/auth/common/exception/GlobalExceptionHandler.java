@@ -63,6 +63,27 @@ public class GlobalExceptionHandler {
         return buildResponse(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred", request);
     }
 
+    // 401 - handles when user passes an invalid JWT
+    @ExceptionHandler(InvalidTokenException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidTokenException(
+            InvalidTokenException ex,
+            HttpServletRequest request
+    ) {
+
+        return buildResponse(HttpStatus.UNAUTHORIZED, ex.getMessage(), request);
+    }
+
+    // 404 - handles when user is not present
+    @ExceptionHandler(UserNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleUserNotFoundException(
+            UserNotFoundException ex,
+            HttpServletRequest request
+    ) {
+
+        return buildResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+
+    }
+
     // DRY — single builder used by all handlers
     private ResponseEntity<ErrorResponse> buildResponse(
             HttpStatus status,

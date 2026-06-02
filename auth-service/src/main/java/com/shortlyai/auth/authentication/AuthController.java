@@ -3,6 +3,7 @@ package com.shortlyai.auth.authentication;
 
 import com.shortlyai.auth.dto.AuthResponse;
 import com.shortlyai.auth.dto.LoginRequest;
+import com.shortlyai.auth.dto.RefreshTokenRequest;
 import com.shortlyai.auth.dto.RegisterRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -34,4 +35,11 @@ public class AuthController {
                 .body(authService.register(registerRequest));
     }
 
+    @PostMapping("/refresh")
+    public ResponseEntity<AuthResponse> refresh(@Valid @RequestBody RefreshTokenRequest refreshTokenRequest) {
+
+        return ResponseEntity
+                .status(HttpStatus.OK)
+                .body(authService.refresh(refreshTokenRequest));
+    }
 }
