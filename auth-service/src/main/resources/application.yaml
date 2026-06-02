@@ -1,6 +1,12 @@
+api:
+  prefix: /api/v1
+
 spring:
   application:
     name: auth-service
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.security.oauth2.client.autoconfigure.OAuth2ClientAutoConfiguration
 
   # Postgres — users, roles, refresh tokens
   datasource:
@@ -10,7 +16,7 @@ spring:
     hikari:
       maximum-pool-size: 10           # max DB connections in pool
       minimum-idle: 2                 # keep 2 warm at all times
-      connection-timeout: 30000       # fail fast if no connection in 30s
+      connection-timeout: 30000
 
   jpa:
     hibernate:
@@ -31,7 +37,7 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD:}
+      password: ${REDIS_PASSWORD:redis123}
 
   # OAuth2 Google — client credentials from Google Cloud Console
   security:
@@ -60,5 +66,6 @@ management:
 
 logging:
   level:
-    root: INFO
+    root: info
     com.shortlyai: DEBUG
+    org.springframework.web: DEBUG

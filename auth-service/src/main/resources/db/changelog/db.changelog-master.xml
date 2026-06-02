@@ -6,6 +6,6 @@
     http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.20.xsd">
 
     <!-- Master file — import migrations in order, never reorder these -->
-    <include file="db/changelog/migrations/V001__create_auth_tables.sql"/>
+    <include file="classpath:db/changelog/migrations/V001__create_auth_tables.sql"/>
 
 </databaseChangeLog>
