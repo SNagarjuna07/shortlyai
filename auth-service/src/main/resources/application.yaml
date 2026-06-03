@@ -18,19 +18,19 @@ spring:
       minimum-idle: 2                 # keep 2 warm at all times
       connection-timeout: 30000
 
+  # Liquibase — runs migrations on startup before app accepts traffic
+  liquibase:
+    enabled: true
+    change-log: classpath:db/changelog/db.changelog-master.xml
+
   jpa:
     hibernate:
-      ddl-auto: validate              # Liquibase owns schema — JPA only validates
+      ddl-auto: validate        # Liquibase owns schema — JPA only validates
     show-sql: false                   # never true in prod — use logs instead
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: true
-
-  # Liquibase — runs migrations on startup before app accepts traffic
-  liquibase:
-    change-log: classpath:db/changelog/db.changelog-master.xml
-    enabled: true
 
   # Redis — refresh token store + blacklisted access tokens
   data:

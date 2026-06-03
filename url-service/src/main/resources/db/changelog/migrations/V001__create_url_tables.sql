@@ -1,13 +1,15 @@
 -- changeset shortlyai:1
 -- Core URL table — every shortened URL lives here
 CREATE TABLE urls (
-    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id            BIGSERIAL     PRIMARY KEY,                 -- auto-increment; Base62-encoded to form the slug
     slug          VARCHAR(20)   NOT NULL UNIQUE,             -- Base62 short code e.g. "aB3xK2p"
     original_url  TEXT          NOT NULL,                    -- full destination URL
-    user_id       UUID          NOT NULL,                    -- owner (no FK — cross-service boundary)
+    user_id       BIGINT        NOT NULL,                    -- owner (no FK — cross-service boundary)
     title         VARCHAR(255),                              -- AI-generated or user-provided
     category      VARCHAR(100),                              -- AI classification result
     is_safe       BOOLEAN       NOT NULL DEFAULT TRUE,       -- AI safety check result
+    is_custom     BOOLEAN       NOT NULL DEFAULT FALSE,      -- true if user provided the slug
+    is_active     BOOLEAN       NOT NULL DEFAULT TRUE,       -- soft delete — never hard-delete URLs
     click_count   BIGINT        NOT NULL DEFAULT 0,          -- denormalized for fast reads
     expires_at    TIMESTAMPTZ,                               -- null = never expires
     created_at    TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
@@ -15,16 +17,17 @@ CREATE TABLE urls (
 );
 
 -- changeset shortlyai:2
--- Custom slugs — user-defined aliases e.g. "my-brand"
-CREATE TABLE custom_slugs (
-    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    url_id      UUID         NOT NULL REFERENCES urls(id) ON DELETE CASCADE,
-    slug        VARCHAR(100) NOT NULL UNIQUE,
-    created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
-);
+-- Indexes — redirect lookup is the hottest query in the entire system
+CREATE INDEX idx_urls_slug       ON urls(slug);
+CREATE INDEX idx_urls_user_id    ON urls(user_id);
+CREATE INDEX idx_urls_expires_at ON urls(expires_at)
+    WHERE expires_at IS NOT NULL;                            -- partial index — skips non-expiring rows
 
 -- changeset shortlyai:3
-CREATE INDEX idx_urls_slug       ON urls(slug);              -- redirect lookup — hottest query
-CREATE INDEX idx_urls_user_id    ON urls(user_id);           -- "my URLs" listing
-CREATE INDEX idx_urls_expires_at ON urls(expires_at)
-    WHERE expires_at IS NOT NULL;                            -- partial index — only expiring URLs
+-- ShedLock table — prevents duplicate scheduled job execution across multiple instances
+CREATE TABLE shedlock (
+    name       VARCHAR(64)  NOT NULL PRIMARY KEY,
+    lock_until TIMESTAMPTZ  NOT NULL,
+    locked_at  TIMESTAMPTZ  NOT NULL,
+    locked_by  VARCHAR(255) NOT NULL
+);

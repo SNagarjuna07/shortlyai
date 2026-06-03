@@ -1,3 +1,4 @@
+-- liquibase formatted sql
 -- changeset shortlyai:1
 -- Users table — core identity, owns everything else
 CREATE TABLE users (
