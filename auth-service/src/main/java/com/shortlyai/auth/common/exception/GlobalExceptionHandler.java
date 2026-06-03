@@ -2,17 +2,18 @@ package com.shortlyai.auth.common.exception;
 
 import com.shortlyai.auth.dto.ErrorResponse;
 import jakarta.servlet.http.HttpServletRequest;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-
 import java.time.Instant;
 
 // @RestControllerAdvice — intercepts exceptions thrown by any controller
 // Single place for all error handling — no try/catch in controllers or services
 @RestControllerAdvice
+@Slf4j
 public class GlobalExceptionHandler {
 
     // Handles @Valid failures — @NotBlank, @Email, @Size violations
@@ -32,6 +33,8 @@ public class GlobalExceptionHandler {
                 .map(error -> error.getField() + ": " + error.getDefaultMessage())
                 .orElse("Validation failed");
 
+        log.error("Validation error: {}", ex.getMessage(), ex);
+
         return buildResponse(HttpStatus.BAD_REQUEST, message, request);
     }
 
@@ -41,6 +44,9 @@ public class GlobalExceptionHandler {
             InvalidCredentialsException ex,
             HttpServletRequest request
     ) {
+
+        log.error("Invalid credentials: {}", ex.getMessage(), ex);
+
         return buildResponse(HttpStatus.UNAUTHORIZED, ex.getMessage(), request);
     }
 
@@ -50,6 +56,9 @@ public class GlobalExceptionHandler {
             EmailAlreadyExistsException ex,
             HttpServletRequest request
     ) {
+
+        log.error("Email already exists: {}", ex.getMessage(), ex);
+
         return buildResponse(HttpStatus.CONFLICT, ex.getMessage(), request);
     }
 
@@ -60,6 +69,9 @@ public class GlobalExceptionHandler {
             Exception ex,
             HttpServletRequest request
     ) {
+
+        log.error("Unexpected error: {}", ex.getMessage(), ex);
+
         return buildResponse(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred", request);
     }
 
@@ -69,6 +81,8 @@ public class GlobalExceptionHandler {
             InvalidTokenException ex,
             HttpServletRequest request
     ) {
+
+        log.error("Invalid JWT: {}", ex.getMessage(), ex);
 
         return buildResponse(HttpStatus.UNAUTHORIZED, ex.getMessage(), request);
     }
@@ -80,8 +94,9 @@ public class GlobalExceptionHandler {
             HttpServletRequest request
     ) {
 
-        return buildResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+        log.error("User not found: {}", ex.getMessage(), ex);
 
+        return buildResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
     }
 
     // DRY — single builder used by all handlers

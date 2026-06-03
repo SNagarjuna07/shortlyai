@@ -30,6 +30,11 @@ public class RefreshTokenService {
         Instant expiry = jwtUtil.extractExpiry(refreshToken);
         long ttlSeconds = Duration.between(Instant.now(), expiry).getSeconds();
 
+        if (ttlSeconds <= 0) {
+            log.warn("Refresh token already expired, not storing");
+            return;
+        }
+
         redis.opsForValue().set(
                 REFRESH_TOKEN_PREFIX + refreshToken,  // key
                 userId,                                // value
