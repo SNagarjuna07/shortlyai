@@ -1,13 +1,16 @@
 package com.shortlyai.url.shortening;
 
 import jakarta.persistence.*;
+import jakarta.validation.constraints.Positive;
 import lombok.Getter;
+import lombok.Setter;
 
 import java.time.Instant;
 
 // @Entity — JPA maps this class to the "urls" table in Postgres
 // @Table — explicitly names the table, never rely on JPA's default naming
 @Getter
+@Setter
 @Entity
 @Table(name = "urls")
 public class Url {

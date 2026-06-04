@@ -15,7 +15,7 @@ public interface UrlRepository extends JpaRepository<Url, Long> {
 
     // Redirect lookup — hottest query, hits idx_urls_slug index
     // Optional forces caller to handle "slug not found" explicitly
-    Optional<Url> findBySlugAndIsActiveTrue(String slug);
+    Optional<Url> findBySlugAndIsActiveTrueAndExpiresAtAfter(String slug, Instant now);
 
     // Check slug availability before saving a custom alias
     boolean existsBySlug(String slug);
@@ -39,4 +39,7 @@ public interface UrlRepository extends JpaRepository<Url, Long> {
     @Modifying
     @Query("UPDATE Url u SET u.clickCount = u.clickCount + 1 WHERE u.slug = :slug")
     void incrementClickCount(@Param("slug") String slug);
+
+    // For loading only the user's URL's. Prevents loading other user's URLs.
+    Optional<Url> findByIdAndUserId(Long id, Long userId);
 }
