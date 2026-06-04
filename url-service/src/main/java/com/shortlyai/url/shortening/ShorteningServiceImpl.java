@@ -1,9 +1,9 @@
 package com.shortlyai.url.shortening;
 
-import com.shortlyai.url.shortening.common.exception.DuplicateSlugException;
-import com.shortlyai.url.shortening.common.exception.UrlNotFoundException;
-import com.shortlyai.url.shortening.dto.ShortenRequest;
-import com.shortlyai.url.shortening.dto.ShortenResponse;
+import com.shortlyai.url.common.exception.DuplicateSlugException;
+import com.shortlyai.url.common.exception.UrlNotFoundException;
+import com.shortlyai.url.common.dto.ShortenRequest;
+import com.shortlyai.url.common.dto.ShortenResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;

@@ -1,7 +1,7 @@
 package com.shortlyai.url.shortening;
 
-import com.shortlyai.url.shortening.dto.ShortenRequest;
-import com.shortlyai.url.shortening.dto.ShortenResponse;
+import com.shortlyai.url.common.dto.ShortenRequest;
+import com.shortlyai.url.common.dto.ShortenResponse;
 
 public interface ShorteningService {
 

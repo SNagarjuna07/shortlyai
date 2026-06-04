@@ -1,4 +1,4 @@
-package com.shortlyai.url.shortening.common.exception;
+package com.shortlyai.url.common.exception;
 
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
@@ -8,7 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-import com.shortlyai.url.shortening.dto.ErrorResponse;
+import com.shortlyai.url.common.dto.ErrorResponse;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.time.Instant;

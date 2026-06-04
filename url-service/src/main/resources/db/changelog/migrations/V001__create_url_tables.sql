@@ -1,3 +1,5 @@
+-- liquibase formatted sql
+
 -- changeset shortlyai:1
 -- Core URL table — every shortened URL lives here
 CREATE TABLE urls (

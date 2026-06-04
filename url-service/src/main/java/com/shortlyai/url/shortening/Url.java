@@ -1,7 +1,6 @@
 package com.shortlyai.url.shortening;
 
 import jakarta.persistence.*;
-import jakarta.validation.constraints.Positive;
 import lombok.Getter;
 import lombok.Setter;
 

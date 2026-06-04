@@ -29,7 +29,6 @@ spring:
     show-sql: false                   # never true in prod — use logs instead
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: true
 
   # Redis — refresh token store + blacklisted access tokens

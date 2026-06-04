@@ -1,4 +1,4 @@
-package com.shortlyai.url.shortening.dto;
+package com.shortlyai.url.common.dto;
 
 import java.time.Instant;
 

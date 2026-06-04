@@ -1,4 +1,4 @@
-package com.shortlyai.url.shortening.common.exception;
+package com.shortlyai.url.common.exception;
 
 public class UrlNotFoundException extends RuntimeException {
 
