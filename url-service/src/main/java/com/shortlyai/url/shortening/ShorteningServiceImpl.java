@@ -1,22 +1,22 @@
 package com.shortlyai.url.shortening;
 
-import com.shortlyai.url.common.exception.DuplicateSlugException;
-import com.shortlyai.url.common.exception.UrlNotFoundException;
 import com.shortlyai.url.common.dto.ShortenRequest;
 import com.shortlyai.url.common.dto.ShortenResponse;
+import com.shortlyai.url.common.exception.DuplicateSlugException;
+import com.shortlyai.url.common.exception.UrlNotFoundException;
+import com.shortlyai.url.events.UrlCreatedEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.List;
 
 @Service
 @Transactional
@@ -25,7 +25,10 @@ import java.util.List;
 public class ShorteningServiceImpl implements ShorteningService {
 
     private final UrlRepository urlRepository;
+
     private final StringRedisTemplate stringRedisTemplate;
+
+    private final KafkaTemplate<String, UrlCreatedEvent> kafkaTemplate;
 
     @Value("${url.base-domain}")
     private String baseDomain;
@@ -35,6 +38,9 @@ public class ShorteningServiceImpl implements ShorteningService {
 
     @Value("${url.cache-ttl-seconds}")
     private long cacheTtlSeconds;
+
+    @Value("${kafka.topics.url-created}")
+    private String urlCreatedTopic;
 
     // Used by REDIS for caching
     private static final String CACHE_PREFIX = "url:";
@@ -92,6 +98,21 @@ public class ShorteningServiceImpl implements ShorteningService {
                 Duration.ofSeconds(cacheTtlSeconds)
         );
 
+        // Publish kafka event
+        kafkaTemplate.send(
+                urlCreatedTopic,           // which mailbox
+                savedUrl.getSlug(),        // routing key — same slug = same partition
+                new UrlCreatedEvent(       // the message
+                        savedUrl.getId(),
+                        savedUrl.getSlug(),
+                        savedUrl.getOriginalUrl(),
+                        baseDomain + "/" + savedUrl.getSlug(),
+                        savedUrl.getUserId(),
+                        savedUrl.getExpiresAt(),
+                        savedUrl.getCreatedAt()
+                )
+        );
+
         log.info(
                 "Created short-url '{}' for userId={}",
                 savedUrl.getSlug(),
@@ -99,7 +120,7 @@ public class ShorteningServiceImpl implements ShorteningService {
         );
 
         // Return response DTO
-        return mapToResponse(url);
+        return mapToResponse(savedUrl);
     }
 
     @Override

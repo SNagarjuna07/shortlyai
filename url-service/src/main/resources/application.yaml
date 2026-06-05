@@ -38,6 +38,8 @@ spring:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
       acks: all                       # wait for all replicas — no data loss
+    topics:
+      url-created : ${URL_CREATED_EVENT:url.created}
 
 server:
   port: 8082
