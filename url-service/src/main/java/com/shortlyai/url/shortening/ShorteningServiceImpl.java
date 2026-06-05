@@ -19,7 +19,6 @@ import java.time.temporal.ChronoUnit;
 
 @Service
 @Transactional
-//@RequiredArgsConstructor
 @Slf4j
 public class ShorteningServiceImpl implements ShorteningService {
 
@@ -29,17 +28,13 @@ public class ShorteningServiceImpl implements ShorteningService {
 
     private final KafkaTemplate<String, UrlCreatedEvent> kafkaTemplate;
 
-    @Value("${url.base-domain}")
-    private String baseDomain;
+    private final String baseDomain;
 
-    @Value("${url.default-expiry-days}")
-    private long defaultExpiryDays;
+    private final long defaultExpiryDays;
 
-    @Value("${url.cache-ttl-seconds}")
-    private long cacheTtlSeconds;
+    private final long cacheTtlSeconds;
 
-    @Value("${spring.kafka.topics.url-created}")
-    private String urlCreatedTopic;
+    private final String urlCreatedTopic;
 
     public ShorteningServiceImpl(
             UrlRepository urlRepository,
@@ -93,12 +88,12 @@ public class ShorteningServiceImpl implements ShorteningService {
                 )
         );
 
-        // Set custom slug if provided
+        // Set custom slug if provided else temp slug so DataIntegrityViolationException does not occur
         if (isCustom) {
             url.setSlug(request.customSlug());
+        } else {
+            url.setSlug("temp-" + (System.nanoTime() % 100000000000L)); // keep under 20 chars
         }
-
-        url.setSlug("temp-" + System.nanoTime());
 
         // First save to generate database ID
         Url savedUrl = urlRepository.save(url);

@@ -24,6 +24,7 @@ spring:
     change-log: classpath:db/changelog/db.changelog-master.xml
 
   jpa:
+    open-in-view: false
     hibernate:
       ddl-auto: validate        # Liquibase owns schema — JPA only validates
     show-sql: false                   # never true in prod — use logs instead
