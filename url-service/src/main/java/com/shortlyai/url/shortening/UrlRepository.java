@@ -1,5 +1,7 @@
 package com.shortlyai.url.shortening;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -21,7 +23,7 @@ public interface UrlRepository extends JpaRepository<Url, Long> {
     boolean existsBySlug(String slug);
 
     // "My URLs" page — all active URLs for a user, newest first
-    List<Url> findByUserIdAndIsActiveTrueOrderByCreatedAtDesc(Long userId);
+    Page<Url> findByUserIdAndIsActiveTrueOrderByCreatedAtDesc(Long userId, Pageable pageable);
 
     // Soft delete — sets isActive=false, never removes the row
     // @Modifying — required for any UPDATE/DELETE query
@@ -42,4 +44,5 @@ public interface UrlRepository extends JpaRepository<Url, Long> {
 
     // For loading only the user's URL's. Prevents loading other user's URLs.
     Optional<Url> findByIdAndUserId(Long id, Long userId);
+
 }

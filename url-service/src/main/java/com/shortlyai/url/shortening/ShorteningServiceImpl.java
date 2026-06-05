@@ -7,12 +7,16 @@ import com.shortlyai.url.common.dto.ShortenResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 
 @Service
 @Transactional
@@ -95,17 +99,7 @@ public class ShorteningServiceImpl implements ShorteningService {
         );
 
         // Return response DTO
-        return new ShortenResponse(
-                savedUrl.getId(),
-                savedUrl.getSlug(),
-                baseDomain + "/" + savedUrl.getSlug(),
-                savedUrl.getOriginalUrl(),
-                savedUrl.getUserId(),
-                savedUrl.isCustom(),
-                savedUrl.getClickCount(),
-                savedUrl.getExpiresAt(),
-                savedUrl.getCreatedAt()
-        );
+        return mapToResponse(url);
     }
 
     @Override
@@ -162,4 +156,36 @@ public class ShorteningServiceImpl implements ShorteningService {
         // cache evict
         stringRedisTemplate.delete(CACHE_PREFIX + url.getSlug());
     }
+
+    @Override
+    public ShortenResponse getUrl(Long id, Long userId) {
+
+        Url url = urlRepository.findByIdAndUserId(id, userId)
+                .orElseThrow(() -> new UrlNotFoundException("URL not found"));
+
+        return mapToResponse(url);
+    }
+
+    @Override
+    public Page<ShortenResponse> getUserUrls(Long userId, Pageable pageable) {
+
+        return urlRepository.findByUserIdAndIsActiveTrueOrderByCreatedAtDesc(userId, pageable)
+                .map(this::mapToResponse);
+    }
+
+    private ShortenResponse mapToResponse(Url u) {
+
+        return new ShortenResponse(
+                u.getId(),
+                u.getSlug(),
+                baseDomain + "/" + u.getSlug(),
+                u.getOriginalUrl(),
+                u.getUserId(),
+                u.isCustom(),
+                u.getClickCount(),
+                u.getExpiresAt(),
+                u.getCreatedAt()
+        );
+    }
 }
+

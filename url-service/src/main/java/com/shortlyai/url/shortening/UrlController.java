@@ -1,0 +1,73 @@
+package com.shortlyai.url.shortening;
+
+import com.shortlyai.url.common.dto.ShortenRequest;
+import com.shortlyai.url.common.dto.ShortenResponse;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequiredArgsConstructor
+@RequestMapping("/api/v1/urls")
+@Slf4j
+public class UrlController {
+
+    private final ShorteningService shorteningService;
+
+    @PostMapping
+    public ResponseEntity<ShortenResponse> shortenURL(
+            @Valid @RequestBody ShortenRequest request,
+            @AuthenticationPrincipal Long userId
+    ) {
+
+        log.info("Create URL request from userId={}", userId);
+
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(
+                        shorteningService.shorten(
+                                request, userId)
+                );
+    }
+
+    @GetMapping
+    public ResponseEntity<Page<ShortenResponse>> getAllUrls(
+            @AuthenticationPrincipal Long userId,
+            Pageable pageable
+    ) {
+
+        log.info("Get URLs for userId={}", userId);
+
+        return ResponseEntity.ok(shorteningService.getUserUrls(userId, pageable));
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<ShortenResponse> getUrl(
+            @PathVariable Long id,
+            @AuthenticationPrincipal Long userId
+    ) {
+
+        log.info("Get URL id={} for userId={}", id, userId);
+
+        return ResponseEntity.ok(shorteningService.getUrl(id, userId));
+
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteUrl(
+            @PathVariable Long id,
+            @AuthenticationPrincipal Long userId
+    ) {
+
+        log.info("Delete URL id={} for userId={}", id, userId);
+
+        shorteningService.delete(id, userId);
+
+        return ResponseEntity.status(HttpStatus.NO_CONTENT).build();
+    }
+}
