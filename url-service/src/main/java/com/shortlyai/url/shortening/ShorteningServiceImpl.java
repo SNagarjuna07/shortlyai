@@ -5,7 +5,6 @@ import com.shortlyai.url.common.dto.ShortenResponse;
 import com.shortlyai.url.common.exception.DuplicateSlugException;
 import com.shortlyai.url.common.exception.UrlNotFoundException;
 import com.shortlyai.url.events.UrlCreatedEvent;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
@@ -20,7 +19,7 @@ import java.time.temporal.ChronoUnit;
 
 @Service
 @Transactional
-@RequiredArgsConstructor
+//@RequiredArgsConstructor
 @Slf4j
 public class ShorteningServiceImpl implements ShorteningService {
 
@@ -39,8 +38,26 @@ public class ShorteningServiceImpl implements ShorteningService {
     @Value("${url.cache-ttl-seconds}")
     private long cacheTtlSeconds;
 
-    @Value("${kafka.topics.url-created}")
+    @Value("${spring.kafka.topics.url-created}")
     private String urlCreatedTopic;
+
+    public ShorteningServiceImpl(
+            UrlRepository urlRepository,
+            StringRedisTemplate stringRedisTemplate,
+            KafkaTemplate<String, UrlCreatedEvent> kafkaTemplate,
+            @Value("${url.base-domain}") String baseDomain,
+            @Value("${url.default-expiry-days}") long defaultExpiryDays,
+            @Value("${url.cache-ttl-seconds}") long cacheTtlSeconds,
+            @Value("${spring.kafka.topics.url-created}") String urlCreatedTopic) {
+
+        this.urlRepository = urlRepository;
+        this.stringRedisTemplate = stringRedisTemplate;
+        this.kafkaTemplate = kafkaTemplate;
+        this.baseDomain = baseDomain;
+        this.defaultExpiryDays = defaultExpiryDays;
+        this.cacheTtlSeconds = cacheTtlSeconds;
+        this.urlCreatedTopic = urlCreatedTopic;
+    }
 
     // Used by REDIS for caching
     private static final String CACHE_PREFIX = "url:";
@@ -80,6 +97,8 @@ public class ShorteningServiceImpl implements ShorteningService {
         if (isCustom) {
             url.setSlug(request.customSlug());
         }
+
+        url.setSlug("temp-" + System.nanoTime());
 
         // First save to generate database ID
         Url savedUrl = urlRepository.save(url);
@@ -161,7 +180,7 @@ public class ShorteningServiceImpl implements ShorteningService {
     public void delete(Long id, Long userId) {
 
         // fetch URL
-        Url url = urlRepository.findByIdAndUserId(id, userId)
+        Url url = urlRepository.findByIdAndUserIdAndIsActiveTrue(id, userId)
                 .orElseThrow(() -> new UrlNotFoundException("URL not found"));
 
         // fetch noOfRows
@@ -181,7 +200,7 @@ public class ShorteningServiceImpl implements ShorteningService {
     @Override
     public ShortenResponse getUrl(Long id, Long userId) {
 
-        Url url = urlRepository.findByIdAndUserId(id, userId)
+        Url url = urlRepository.findByIdAndUserIdAndIsActiveTrue(id, userId)
                 .orElseThrow(() -> new UrlNotFoundException("URL not found"));
 
         return mapToResponse(url);

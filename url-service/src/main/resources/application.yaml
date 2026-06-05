@@ -29,15 +29,17 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD:}
+      password: ${REDIS_PASSWORD:redis123}
 
   # Kafka — publish url.created + url.deleted events
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
-      acks: all                       # wait for all replicas — no data loss
+      value-serializer: org.springframework.kafka.support.serializer.JacksonJsonSerializer
+      acks: all
+      properties:
+        spring.json.add.type.headers: false # wait for all replicas — no data loss
     topics:
       url-created : ${URL_CREATED_EVENT:url.created}
 

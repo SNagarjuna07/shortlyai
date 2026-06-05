@@ -55,8 +55,8 @@
 
         <!-- Kafka — publish url.created, url.deleted events -->
         <dependency>
-            <groupId>org.springframework.kafka</groupId>
-            <artifactId>spring-kafka</artifactId>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-kafka</artifactId>
         </dependency>
 
         <!-- OpenFeign — call ai-service for slug suggestion + safety check -->
@@ -94,6 +94,11 @@
         <dependency>
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jackson</artifactId>
         </dependency>
 
         <!-- ShedLock — URL expiry cleanup + cache warming jobs -->

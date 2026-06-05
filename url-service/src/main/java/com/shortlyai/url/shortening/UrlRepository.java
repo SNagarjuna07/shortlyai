@@ -43,6 +43,7 @@ public interface UrlRepository extends JpaRepository<Url, Long> {
     void incrementClickCount(@Param("slug") String slug);
 
     // For loading only the user's URL's. Prevents loading other user's URLs.
-    Optional<Url> findByIdAndUserId(Long id, Long userId);
+    Optional<Url> findByIdAndUserIdAndIsActiveTrue(Long id, Long userId);
+
 
 }
