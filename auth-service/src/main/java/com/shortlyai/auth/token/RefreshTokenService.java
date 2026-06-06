@@ -1,4 +1,4 @@
-package com.shortlyai.auth.authentication;
+package com.shortlyai.auth.token;
 
 import com.shortlyai.auth.security.JwtUtil;
 import lombok.RequiredArgsConstructor;

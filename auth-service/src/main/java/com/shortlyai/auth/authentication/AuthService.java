@@ -1,24 +1,21 @@
 package com.shortlyai.auth.authentication;
 
-import com.shortlyai.auth.dto.AuthResponse;
-import com.shortlyai.auth.dto.LoginRequest;
-import com.shortlyai.auth.dto.RefreshTokenRequest;
-import com.shortlyai.auth.dto.RegisterRequest;
+import com.shortlyai.auth.dto.*;
+import jakarta.servlet.http.HttpServletRequest;
 
-// Interface — defines the contract, hides implementation details
-// AuthServiceImpl is the only class that knows HOW login works
-// Controllers and tests only depend on this interface, not the impl
+import java.util.UUID;
+
+// HttpServletRequest added to all methods - needed for IP + User-Agent audit logging
 public interface AuthService {
 
-    // Login — validates credentials, returns tokens + user info
-    AuthResponse login(LoginRequest request);
+    AuthResponse login(LoginRequest loginRequest, HttpServletRequest httpRequest);
 
-    // register - for new users
-    AuthResponse register(RegisterRequest registerRequest);
+    AuthResponse register(RegisterRequest registerRequest, HttpServletRequest httpRequest);
 
-    // Generating new refresh tokens
-    AuthResponse refresh(RefreshTokenRequest refreshTokenRequest);
+    AuthResponse refresh(RefreshTokenRequest refreshTokenRequest, HttpServletRequest httpRequest);
 
-    // Allows user to logout
-    void logout(RefreshTokenRequest refreshTokenRequest);
+    UserResponse getMe(UUID userId);
+
+    void logout(RefreshTokenRequest refreshTokenRequest, HttpServletRequest httpRequest);
 }
+

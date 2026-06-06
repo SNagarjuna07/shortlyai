@@ -1,0 +1,25 @@
+package com.shortlyai.auth.admin;
+
+import com.shortlyai.auth.dto.UserResponse;
+import com.shortlyai.auth.user.UserMapper;
+import com.shortlyai.auth.user.UserRepository;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Service;
+
+@Service
+@RequiredArgsConstructor
+public class AdminServiceImpl implements AdminService {
+
+    private final UserRepository userRepository;
+
+    private final UserMapper userMapper;
+
+    @Override
+    public Page<UserResponse> getAllUsers(Pageable pageable) {
+
+        return userRepository.findAll(pageable)
+                .map(userMapper::toResponse);
+    }
+}

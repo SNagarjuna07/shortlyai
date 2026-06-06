@@ -1,81 +1,107 @@
 package com.shortlyai.auth.authentication;
 
+import com.shortlyai.auth.audit.AuditEventType;
+import com.shortlyai.auth.audit.AuditLogService;
 import com.shortlyai.auth.common.exception.EmailAlreadyExistsException;
 import com.shortlyai.auth.common.exception.InvalidCredentialsException;
 import com.shortlyai.auth.common.exception.InvalidTokenException;
 import com.shortlyai.auth.common.exception.UserNotFoundException;
-import com.shortlyai.auth.dto.AuthResponse;
-import com.shortlyai.auth.dto.LoginRequest;
-import com.shortlyai.auth.dto.RefreshTokenRequest;
-import com.shortlyai.auth.dto.RegisterRequest;
+import com.shortlyai.auth.dto.*;
+import com.shortlyai.auth.email.VerificationService;
 import com.shortlyai.auth.security.JwtUtil;
+import com.shortlyai.auth.token.RefreshTokenService;
 import com.shortlyai.auth.user.*;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Instant;
 import java.util.UUID;
 
 @Slf4j
-@Service // Spring registers this as the AuthService bean
-@Transactional // every public method runs inside a transaction by default
-@RequiredArgsConstructor // Lombok generates the constructor for bean injection
+@Service
+@Transactional
+@RequiredArgsConstructor
 public class AuthServiceImpl implements AuthService {
 
-    // Constructor injection — all dependencies declared as final
     private final UserRepository userRepository;
+
     private final PasswordEncoder passwordEncoder;
+
     private final JwtUtil jwtUtil;
+
     private final UserMapper userMapper;
+
     private final RefreshTokenService refreshTokenService;
 
+    private final AuditLogService auditLogService;
+
+    private final VerificationService verificationService;
 
     @Override
-    public AuthResponse login(LoginRequest request) {
+    public AuthResponse login(LoginRequest request, HttpServletRequest httpRequest) {
+
         log.info("Login attempt for email: {}", request.email());
 
-        // Step 1 — find user by email, fail fast if not found
+        // Step 1 - find user, audit failure if not found
         User user = userRepository.findByEmail(request.email())
                 .orElseThrow(() -> {
-                    log.warn("Login failed — email not found: {}", request.email());
-                    // Generic message — never tell caller whether email or password was wrong
+
+                    log.warn("Login failed, email not found: {}", request.email());
+
+                    // Audit LOGIN_FAILED — no userId yet (user not found)
+                    auditLogService.log(AuditEventType.LOGIN_FAILED, httpRequest);
+
                     return new InvalidCredentialsException("Invalid email or password");
                 });
 
-        // Step 2 — verify raw password against BCrypt hash in DB
-        // BCrypt.matches() is intentionally slow — brute force protection
+        // Step 2 - verify password, audit failure if wrong
         if (!passwordEncoder.matches(request.password(), user.getPassword())) {
-            log.warn("Login failed — wrong password for email: {}", request.email());
+
+            log.warn("Login failed, wrong password for email: {}", request.email());
+
+            // Audit LOGIN_FAILED, we know userId here but still generic response to caller
+            auditLogService.log(AuditEventType.LOGIN_FAILED, user.getId(), httpRequest);
+
             throw new InvalidCredentialsException("Invalid email or password");
         }
 
-        // Step 3 — generate both tokens
-        // role stored as claim — gateway reads it without hitting DB
+        // Step 3 - generate tokens
         String accessToken = jwtUtil.generateAccessToken(
-                user.getId(), user.getEmail(), user.getRole().name()
+                user.getId(),
+                user.getEmail(),
+                user.getRole().name()
         );
+
         String refreshToken = jwtUtil.generateRefreshToken(
-                user.getId(), user.getEmail(), user.getRole().name()
+                user.getId(),
+                user.getEmail(),
+                user.getRole().name()
         );
+
+        // Store refresh token
+        refreshTokenService.store(refreshToken, user.getId().toString());
+
+        // Audit success — runs async on background thread, doesn't slow response
+        auditLogService.log(AuditEventType.LOGIN_SUCCESS, user.getId(), httpRequest);
 
         log.info("Login successful for userId: {}", user.getId());
 
-        // Store refresh token in Redis — enables revocation on logout
-        refreshTokenService.store(refreshToken, user.getId().toString());
-
-        // Step 4 — build and return response
         return new AuthResponse(accessToken, refreshToken, userMapper.toResponse(user));
     }
 
     @Override
-    public AuthResponse register(RegisterRequest registerRequest) {
+    public AuthResponse register(RegisterRequest registerRequest, HttpServletRequest httpRequest) {
 
         log.info("Register attempt for email: {}", registerRequest.email());
 
         if (userRepository.existsByEmail(registerRequest.email())) {
+
+            // Audit failed registration attempt — no userId yet
+            auditLogService.log(AuditEventType.REGISTER_FAILED, httpRequest);
+
             throw new EmailAlreadyExistsException("An account exists already with this email");
         }
 
@@ -91,51 +117,59 @@ public class AuthServiceImpl implements AuthService {
         User savedUser = userRepository.save(user);
 
         String accessToken = jwtUtil.generateAccessToken(
-                savedUser.getId(), savedUser.getEmail(), savedUser.getRole().name()
+                savedUser.getId(),
+                savedUser.getEmail(),
+                savedUser.getRole().name()
         );
+
         String refreshToken = jwtUtil.generateRefreshToken(
-                savedUser.getId(), savedUser.getEmail(), savedUser.getRole().name()
+                savedUser.getId(),
+                savedUser.getEmail(),
+                savedUser.getRole().name()
         );
+
+        refreshTokenService.store(refreshToken, savedUser.getId().toString());
+
+        // Audit new registration - async
+        auditLogService.log(AuditEventType.REGISTER, savedUser.getId(), httpRequest);
 
         log.info("Registration successful for userId: {}", savedUser.getId());
 
-        // Store refresh token in Redis — enables revocation on logout
-        refreshTokenService.store(refreshToken, savedUser.getId().toString());
+        // Send verification email — async task
+        verificationService.sendVerificationEmail(savedUser);
+
+        log.info("Verification mail sent for userId: {}", savedUser.getId());
 
         return new AuthResponse(accessToken, refreshToken, userMapper.toResponse(savedUser));
     }
 
     @Override
-    public AuthResponse refresh(RefreshTokenRequest request) {
+    public AuthResponse refresh(RefreshTokenRequest request, HttpServletRequest httpRequest) {
 
-        // Check token signature and expiry
         if (!jwtUtil.isTokenValid(request.refreshToken())) {
             throw new InvalidTokenException("Invalid refresh token");
         }
 
-        // Checking if it exists or not
         if (!refreshTokenService.exists(request.refreshToken())) {
             throw new InvalidTokenException("Invalid refresh token");
         }
 
-        // Generating new access and refresh tokens
         String id = jwtUtil.extractUserId(request.refreshToken());
         String email = jwtUtil.extractEmail(request.refreshToken());
         String role = jwtUtil.extractRole(request.refreshToken());
 
         String accessToken = jwtUtil.generateAccessToken(UUID.fromString(id), email, role);
-
         String refreshToken = jwtUtil.generateRefreshToken(UUID.fromString(id), email, role);
 
-        // Fetch user before Redis so that if DB throws, data in Redis won't be corrupted (fail-fast)
+        // Fetch user before Redis ops — if DB throws, Redis stays clean
         User user = userRepository.findById(UUID.fromString(id))
                 .orElseThrow(() -> new UserNotFoundException("User not found"));
 
-        // Deleting old refresh token
         refreshTokenService.delete(request.refreshToken());
-
-        // Storing new refresh token generated
         refreshTokenService.store(refreshToken, id);
+
+        // Audit token rotation
+        auditLogService.log(AuditEventType.TOKEN_REFRESH, UUID.fromString(id), httpRequest);
 
         log.info("New refresh token generated for userId: {}", id);
 
@@ -143,14 +177,29 @@ public class AuthServiceImpl implements AuthService {
     }
 
     @Override
-    public void logout(RefreshTokenRequest request) {
+    public void logout(RefreshTokenRequest request, HttpServletRequest httpRequest) {
 
         if (!refreshTokenService.exists(request.refreshToken())) {
             throw new InvalidTokenException("Invalid or already expired refresh token");
         }
 
+        // Extract userId before deleting, need it for audit
+        String userId = jwtUtil.extractUserId(request.refreshToken());
+
         refreshTokenService.delete(request.refreshToken());
 
-        log.info("Logout successful");
+        // Audit logout
+        auditLogService.log(AuditEventType.LOGOUT, UUID.fromString(userId), httpRequest);
+
+        log.info("Logout successful for userId: {}", userId);
+    }
+
+    @Override
+    public UserResponse getMe(UUID userId) {
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException("This user does not exist"));
+
+        return userMapper.toResponse(user);
     }
 }
