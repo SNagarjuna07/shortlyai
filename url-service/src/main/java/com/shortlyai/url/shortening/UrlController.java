@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/api/v1/urls")
+@RequestMapping("${api.prefix}/urls")
 @Slf4j
 public class UrlController {
 

@@ -1,6 +1,5 @@
 package com.shortlyai.auth.authentication;
 
-
 import com.shortlyai.auth.dto.AuthResponse;
 import com.shortlyai.auth.dto.LoginRequest;
 import com.shortlyai.auth.dto.RefreshTokenRequest;
@@ -15,7 +14,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/api/v1/auth")
+@RequestMapping("${api.prefix}/auth")
 @RequiredArgsConstructor
 public class AuthController {
 

@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 // Public controller — no authentication required
 // Anyone with the short URL can follow the redirect
 @RestController
-@RequestMapping("/api/v1/r")
+@RequestMapping("${api.prefix}/r")
 @RequiredArgsConstructor
 @Slf4j
 public class RedirectController {
