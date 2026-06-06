@@ -41,3 +41,6 @@ CREATE INDEX idx_users_email          ON users(email);
 CREATE INDEX idx_refresh_tokens_user  ON refresh_tokens(user_id);
 CREATE INDEX idx_audit_log_user       ON audit_log(user_id);
 CREATE INDEX idx_audit_log_created    ON audit_log(created_at);
+
+-- changeset shortlyai:5
+ALTER TABLE audit_log DROP CONSTRAINT audit_log_user_id_fkey;
