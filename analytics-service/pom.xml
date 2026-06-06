@@ -24,8 +24,8 @@
 
         <!-- Kafka — consume url.clicks events from url-service -->
         <dependency>
-            <groupId>org.springframework.kafka</groupId>
-            <artifactId>spring-kafka</artifactId>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-kafka</artifactId>
         </dependency>
 
         <!-- Postgres — persist aggregated click data -->
