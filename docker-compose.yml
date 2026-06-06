@@ -1,87 +1,176 @@
-# docker-compose.yml — lives at project root
-# Spins up all infra locally. Services (Java) run in IntelliJ, not here.
+# docker-compose.yml — project root
+# PURPOSE: spins up ALL infrastructure locally.
+# Java services (5 microservices) run in IntelliJ — NOT here.
+# Run: docker compose up -d
+# Stop: docker compose down
+# Wipe everything: docker compose down -v  (WARNING: deletes all data)
 
 version: '3.8'
 
 services:
 
-  # ── POSTGRES ────────────────────────────────────────────────────────
+  # ════════════════════════════════════════════════════════════════════
+  # POSTGRES 16
+  # Hosts 4 separate databases — one per service that needs persistence.
+  # auth-service    → shortlyai_auth
+  # url-service     → shortlyai_urls
+  # analytics-service → shortlyai_analytics
+  # ai-service      → shortlyai_ai  (future use)
+  # ════════════════════════════════════════════════════════════════════
   postgres:
     image: postgres:16
     container_name: shortlyai-postgres
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      PGTZ: Asia/Kolkata      # add this line — correct IANA name for IST
+      POSTGRES_USER: postgres         # superuser — used by all services locally
+      POSTGRES_PASSWORD: postgres     # matches DB_PASSWORD default in all application.yaml files
+      PGTZ: Asia/Kolkata              # server timezone — timestamps stored in IST locally
     ports:
-      - "5432:5432"              # host:container — connect via localhost:5432
+      - "5432:5432"                   # host:container — connect via localhost:5432 from IntelliJ
     volumes:
-      - postgres-data:/var/lib/postgresql/data          # persist data across restarts
-      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql  # create 3 DBs on first start
+      - postgres-data:/var/lib/postgresql/data                        # named volume — data survives container restart
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql         # runs ONCE on first ever start — creates all 4 DBs
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      test: ["CMD-SHELL", "pg_isready -U postgres"]   # checks if Postgres is accepting connections
+      interval: 10s                                    # check every 10 seconds
+      timeout: 5s                                      # fail check if no response in 5s
+      retries: 5                                       # mark unhealthy after 5 consecutive failures
 
-  # ── REDIS ────────────────────────────────────────────────────────────
+  # ════════════════════════════════════════════════════════════════════
+  # REDIS STACK
+  # Using redis/redis-stack (NOT plain redis) because analytics-service
+  # needs RedisBloom module for Bloom filter (BF.ADD / BF.EXISTS commands).
+  # Plain redis image does NOT have RedisBloom — would get UNKNOWN COMMAND error.
+  #
+  # Redis use cases in ShortlyAI:
+  # 1. URL cache          — url-service caches slug→longUrl (cache-aside)
+  # 2. Rate limiting      — api-gateway token bucket via Lua script
+  # 3. Refresh tokens     — auth-service stores refresh token metadata
+  # 4. Bloom filter       — analytics-service deduplicates clicks
+  # 5. Real-time counters — analytics-service click:realtime:{urlId}
+  # 6. ShedLock locks     — all services use Redis for distributed job locks
+  # ════════════════════════════════════════════════════════════════════
   redis:
-    image: redis:7-alpine             # alpine = smaller image
+    image: redis/redis-stack:latest
     container_name: shortlyai-redis
-    command: redis-server --requirepass redis123   # password matches yml config
+    environment:
+      REDIS_ARGS: "--requirepass redis123"   # ← password via env, not command override
     ports:
       - "6379:6379"
+      - "8001:8001"
     volumes:
-      - redis-data:/data              # persist Redis data across restarts
+      - redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "redis123", "ping"]
+      test: [ "CMD", "redis-cli", "-a", "redis123", "ping" ]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # ── ZOOKEEPER — Kafka needs this to manage brokers ───────────────────
+  # ════════════════════════════════════════════════════════════════════
+  # ZOOKEEPER
+  # Kafka's coordinator — manages broker metadata, leader election,
+  # topic partition assignments. Kafka CANNOT start without Zookeeper.
+  # (KRaft mode removes this requirement but Confluent 7.6 still uses ZK)
+  # You never talk to Zookeeper directly — Kafka uses it internally.
+  # ════════════════════════════════════════════════════════════════════
   zookeeper:
     image: confluentinc/cp-zookeeper:7.6.0
     container_name: shortlyai-zookeeper
     environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
+      ZOOKEEPER_CLIENT_PORT: 2181     # port Kafka connects to Zookeeper on
+      ZOOKEEPER_TICK_TIME: 2000       # heartbeat interval in ms — 2s is default
     ports:
-      - "2181:2181"
+      - "2181:2181"                   # exposed only for debugging — services never use this directly
 
-  # ── KAFKA ────────────────────────────────────────────────────────────
+  # ════════════════════════════════════════════════════════════════════
+  # KAFKA
+  # Message broker — async communication between microservices.
+  # Topics used in ShortlyAI:
+  #   url.created    — url-service → ai-service (classify new URL)
+  #   url.clicks     — url-service → analytics-service (track clicks)
+  #   url.classified — ai-service  → url-service (classification result)
+  #   url.deleted    — url-service → analytics-service (cleanup on delete)
+  #
+  # TWO LISTENERS EXPLAINED:
+  # Kafka must advertise different addresses to different types of clients:
+  #
+  #   PLAINTEXT (port 9092):
+  #     → advertises "localhost:9092"
+  #     → used by IntelliJ (Java services running on host machine)
+  #     → localhost works because port 9092 is mapped host→container
+  #
+  #   PLAINTEXT_INTERNAL (port 29092):
+  #     → advertises "kafka:29092"
+  #     → used by OTHER Docker containers (kafka-ui, future service containers)
+  #     → "kafka" resolves via Docker internal DNS — containers find each other by service name
+  #     → port 29092 NOT exposed to host — internal Docker network only
+  #
+  # Without two listeners:
+  #   Single "localhost:9092" → kafka-ui inside Docker tries localhost → hits itself → fails
+  #   Single "kafka:9092"     → IntelliJ on host can't resolve "kafka" hostname → fails
+  # ════════════════════════════════════════════════════════════════════
   kafka:
     image: confluentinc/cp-kafka:7.6.0
     container_name: shortlyai-kafka
     depends_on:
-      - zookeeper                     # kafka starts only after zookeeper is up
+      - zookeeper                   # Kafka waits for Zookeeper to start first
     ports:
-      - "9092:9092"
+      - "9092:9092"                 # ONLY external port exposed — IntelliJ connects here
+      # 29092 intentionally NOT exposed — Docker-internal only
     environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092   # address Java services connect to
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1               # 1 = single broker, fine for dev
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: true                   # topics auto-created on first publish
+      KAFKA_BROKER_ID: 1            # unique ID for this broker — we only have one broker locally
+
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181   # Kafka finds Zookeeper via Docker DNS
+
+      # Declare both listeners — what addresses Kafka binds to inside container
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_INTERNAL://0.0.0.0:29092
+      # 0.0.0.0 = listen on all interfaces inside container
+
+      # What Kafka tells clients to connect to — different per listener
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://kafka:29092
+
+      # Maps each listener name → security protocol (both are plaintext, no TLS locally)
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
+
+      # Which listener Kafka brokers use to talk to each other (multi-broker setup)
+      # Must be internal — brokers are in Docker, resolve each other by service name
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT_INTERNAL
+
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1     # 1 = single broker — fine for dev, never use 1 in prod
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: true          # topics auto-created on first publish — no manual setup needed
+      KAFKA_LOG_RETENTION_HOURS: 168                 # keep messages for 7 days — useful for local debugging
     healthcheck:
       test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
-      interval: 15s
+      interval: 15s      # Kafka takes longer to start than Postgres/Redis — give it time
       timeout: 10s
       retries: 5
 
-  # ── KAFKA UI — browse topics + messages visually ─────────────────────
+  # ════════════════════════════════════════════════════════════════════
+  # KAFKA UI
+  # Visual dashboard for Kafka — open localhost:8090 in browser.
+  # Use this to:
+  #   - See all topics (url.clicks, url.created, etc.)
+  #   - Browse individual messages — verify url-service published correctly
+  #   - Check consumer group lag — is analytics-service keeping up?
+  #   - Manually publish test messages during development
+  # Essential debugging tool — use it constantly while building.
+  # ════════════════════════════════════════════════════════════════════
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
     container_name: shortlyai-kafka-ui
     depends_on:
       - kafka
     ports:
-      - "8090:8080"                   # open localhost:8090 in browser
+      - "8090:8080"     # open localhost:8090 in browser (8080 conflicts with api-gateway)
     environment:
       KAFKA_CLUSTERS_0_NAME: local
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092    # uses INTERNAL listener — kafka-ui is inside Docker
 
-# ── VOLUMES — named volumes persist data when containers restart ───────
+# ════════════════════════════════════════════════════════════════════
+# NAMED VOLUMES
+# Docker manages these — data lives outside container lifecycle.
+# Container deleted → volume survives → data safe.
+# "docker compose down -v" deletes volumes too — only do this for full reset.
+# ════════════════════════════════════════════════════════════════════
 volumes:
-  postgres-data:
-  redis-data:
+  postgres-data:    # Postgres table data — all 4 databases
+  redis-data:       # Redis keys — cache, tokens, counters, Bloom filter
