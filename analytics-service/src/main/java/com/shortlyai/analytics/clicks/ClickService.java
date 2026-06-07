@@ -1,9 +1,13 @@
 package com.shortlyai.analytics.clicks;
 
 import com.shortlyai.analytics.events.UrlClickedEvent;
+import com.shortlyai.analytics.events.UrlCreatedEvent;
+import com.shortlyai.analytics.events.UrlDeletedEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.UUID;
@@ -15,7 +19,7 @@ public class ClickService {
 
     private final ClickEventRepository clickEventRepository;
     private final BloomFilterService bloomFilterService;
-    private final RedisTemplate<String, String> redisTemplate;
+    private final StringRedisTemplate redisTemplate;
 
     // Called by Kafka consumer for every url.clicks event
     @Transactional  // wraps DB insert in a transaction — rolls back if save fails
@@ -56,5 +60,28 @@ public class ClickService {
         }
         // Fallback: count from Postgres
         return clickEventRepository.countByUrlId(urlId);
+    }
+
+    // Called on url.created — sets counter to 0 so stats endpoint works immediately
+    public void initializeCounter(UrlCreatedEvent event) {
+
+        String redisKey = "clicks:realtime:" + event.urlId();
+
+        // Only set if not already exists - don't overwrite real click data
+        redisTemplate.opsForValue().setIfAbsent(redisKey, "0");
+
+        log.debug("Initialized click counter for slug: {} urlId: {}", event.slug(), event.urlId());
+    }
+
+    @Transactional
+    public void deleteClickData(UrlDeletedEvent event) {
+
+        // Delete all raw click rows for this slug
+        clickEventRepository.deleteBySlug(event.slug());
+
+        // Delete real-time Redis counter
+        redisTemplate.delete("clicks:realtime:" + event.slug());
+
+        log.info("Deleted click data for slug: {} urlId: {}", event.slug(), event.id());
     }
 }

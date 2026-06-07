@@ -4,8 +4,10 @@ import com.shortlyai.url.common.dto.ShortenRequest;
 import com.shortlyai.url.common.dto.ShortenResponse;
 import com.shortlyai.url.common.exception.DuplicateSlugException;
 import com.shortlyai.url.common.exception.UrlNotFoundException;
+import com.shortlyai.url.events.UrlClickedEvent;
 import com.shortlyai.url.events.UrlCreatedEvent;
 import com.shortlyai.url.events.UrlDeletedEvent;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
@@ -39,6 +41,8 @@ public class ShorteningServiceImpl implements ShorteningService {
 
     private final String urlCreatedTopic;
 
+    private final String urlClickedTopic;
+
     private final String urlDeletedTopic;
 
     public ShorteningServiceImpl(
@@ -49,6 +53,7 @@ public class ShorteningServiceImpl implements ShorteningService {
             @Value("${url.default-expiry-days}") long defaultExpiryDays,
             @Value("${url.cache-ttl-seconds}") long cacheTtlSeconds,
             @Value("${spring.kafka.topics.url-created}") String urlCreatedTopic,
+            @Value("${spring.kafka.topics.url-clicked}") String urlClickedTopic,
             @Value("${spring.kafka.topics.url-deleted}") String urlDeletedTopic) {
 
         this.urlRepository = urlRepository;
@@ -58,6 +63,7 @@ public class ShorteningServiceImpl implements ShorteningService {
         this.defaultExpiryDays = defaultExpiryDays;
         this.cacheTtlSeconds = cacheTtlSeconds;
         this.urlCreatedTopic = urlCreatedTopic;
+        this.urlClickedTopic = urlClickedTopic;
         this.urlDeletedTopic = urlDeletedTopic;
     }
 
@@ -111,13 +117,12 @@ public class ShorteningServiceImpl implements ShorteningService {
             savedUrl = urlRepository.save(savedUrl);
         }
 
-        // Cache slug → original URL in Redis
-        stringRedisTemplate.opsForValue()
-                .set(
-                        CACHE_PREFIX + savedUrl.getSlug(),
-                        savedUrl.getOriginalUrl(),
-                        Duration.ofSeconds(cacheTtlSeconds)
-                );
+        // Cache slug -> original URL in Redis
+        stringRedisTemplate.opsForValue().set(
+                CACHE_PREFIX + savedUrl.getSlug(),
+                savedUrl.getId() + "|" + savedUrl.getOriginalUrl(), // <- urlId|url
+                Duration.ofSeconds(cacheTtlSeconds)
+        );
 
         // Publish kafka event
         kafkaTemplate.send(
@@ -154,7 +159,7 @@ public class ShorteningServiceImpl implements ShorteningService {
 
     @Override
     @Transactional(readOnly = true)
-    public String resolve(String slug) {
+    public String resolve(String slug, HttpServletRequest request) {
 
         String cached = stringRedisTemplate.opsForValue()
                 .get(CACHE_PREFIX + slug);
@@ -164,7 +169,17 @@ public class ShorteningServiceImpl implements ShorteningService {
 
             log.info("Cache hit for slug: {}", slug);
 
-            return cached;
+            // parse the url which contains id, if Redis is hit there will no id
+            String[] parts = cached.split("\\|", 2); // \\| splits 1st |
+
+            Long urlId = Long.parseLong(parts[0]);
+
+            String originalUrl = parts[1];
+
+            // publish click also on cache hit
+            publishClickEvent(urlId, slug, request);
+
+            return originalUrl;
         }
 
         log.info("Cache miss for slug. Fetching from DB: {}", slug);
@@ -182,6 +197,8 @@ public class ShorteningServiceImpl implements ShorteningService {
                 shortUrl.getOriginalUrl(),
                 Duration.ofSeconds(cacheTtlSeconds)
         );
+
+        publishClickEvent(shortUrl.getId(), slug, request);
 
         return shortUrl.getOriginalUrl();
     }
@@ -257,6 +274,45 @@ public class ShorteningServiceImpl implements ShorteningService {
                 u.getExpiresAt(),
                 u.getCreatedAt()
         );
+    }
+
+    private void publishClickEvent(Long urlId, String slug, HttpServletRequest request) {
+        String rawIp = request.getRemoteAddr();
+        String ipHash = sha256(rawIp);  // see below
+
+        kafkaTemplate.send(
+                urlClickedTopic,
+                slug,
+                new UrlClickedEvent(
+                        urlId,
+                        slug,
+                        request.getHeader("User-Agent"),
+                        ipHash,
+                        request.getHeader("Referer"),
+                        Instant.now()
+                )
+        ).whenComplete((result, ex) -> {
+            if (ex != null) log.error("Click event publish failed: {}", ex.getMessage());
+        });
+    }
+
+    private String sha256(String input) {
+
+        try {
+
+            var digest = java.security.MessageDigest.getInstance("SHA-256");
+
+            byte[] hash = digest.digest(input.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+            var hex = new StringBuilder();
+
+            for (byte b : hash) hex.append(String.format("%02x", b));
+
+            return hex.toString();
+
+        } catch (Exception _) {
+            return "unknown";
+        }
     }
 }
 

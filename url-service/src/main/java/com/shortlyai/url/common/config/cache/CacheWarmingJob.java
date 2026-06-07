@@ -46,7 +46,7 @@ public class CacheWarmingJob {
         mostActiveUrls.forEach(url ->
                 stringRedisTemplate.opsForValue().set(
                         "url:" + url.getSlug(),   // key
-                        url.getOriginalUrl(),      // value - what redirect needs
+                        url.getId() + "|" + url.getOriginalUrl(),      // value - what redirect needs
                         Duration.ofSeconds(ttl)
                 )
         );

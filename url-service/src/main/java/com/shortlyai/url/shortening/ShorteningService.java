@@ -2,6 +2,7 @@ package com.shortlyai.url.shortening;
 
 import com.shortlyai.url.common.dto.ShortenRequest;
 import com.shortlyai.url.common.dto.ShortenResponse;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
@@ -14,7 +15,7 @@ public interface ShorteningService {
     ShortenResponse shorten(ShortenRequest request, UUID userId);
 
     // Resolve a slug to its original URL — Redis first, Postgres fallback
-    String resolve(String slug);
+    String resolve(String slug, HttpServletRequest request);
 
     // Soft-delete a URL — only the owner can delete their own URL
     void delete(Long id, UUID userId);

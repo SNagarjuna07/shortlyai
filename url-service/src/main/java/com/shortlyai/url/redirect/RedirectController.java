@@ -1,6 +1,7 @@
 package com.shortlyai.url.redirect;
 
 import com.shortlyai.url.shortening.ShorteningService;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
@@ -26,13 +27,14 @@ public class RedirectController {
     // No @AuthenticationPrincipal — this endpoint is intentionally public
     @GetMapping("/{slug}")
     public ResponseEntity<Void> redirect(
-            @PathVariable String slug
+            @PathVariable String slug,
+            HttpServletRequest request
     ) {
 
         log.info("Redirect request for slug: {}", slug);
 
         // Redis first, Postgres fallback — handled inside resolve()
-        String longUrl = shorteningService.resolve(slug);
+        String longUrl = shorteningService.resolve(slug, request);
 
         // Set Location header — browser follows this to the original URL
         HttpHeaders headers = new HttpHeaders();

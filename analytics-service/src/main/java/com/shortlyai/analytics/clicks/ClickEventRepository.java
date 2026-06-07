@@ -1,6 +1,7 @@
 package com.shortlyai.analytics.clicks;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import java.time.Instant;
@@ -32,4 +33,10 @@ public interface ClickEventRepository extends JpaRepository<ClickEvent, Long> {
             AND c.clickedAt < :to
             """)
     List<UUID> findDistinctUrlIdsBetween(@Param("from") Instant from, @Param("to") Instant to);
+
+    // Bulk delete all click events for a URL — called on url.deleted
+    // Spring Data generates: DELETE FROM click_events WHERE slug = ?
+    // @Modifying required for DELETE — tells Spring this mutates data
+    @Modifying
+    void deleteBySlug(String slug);
 }

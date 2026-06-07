@@ -2,9 +2,7 @@ package com.shortlyai.analytics.clicks;
 
 import jakarta.persistence.*;
 import lombok.Getter;
-
 import java.time.Instant;
-import java.util.UUID;
 
 @Entity
 @Table(name = "click_events")
@@ -16,7 +14,7 @@ public class ClickEvent {
     private Long id;
 
     @Column(name = "url_id", nullable = false)
-    private UUID urlId;
+    private Long urlId;
 
     @Column(nullable = false, length = 20)
     private String slug;

@@ -1,5 +1,6 @@
-package com.shortlyai.analytics.clicks;
+package com.shortlyai.analytics.consumers;
 
+import com.shortlyai.analytics.clicks.ClickService;
 import com.shortlyai.analytics.events.UrlClickedEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

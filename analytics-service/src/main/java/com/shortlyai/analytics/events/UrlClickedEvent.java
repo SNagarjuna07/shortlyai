@@ -1,12 +1,11 @@
 package com.shortlyai.analytics.events;
 
 import java.time.Instant;
-import java.util.UUID;
 
 // Record — immutable Kafka message. Must match exactly what url-service publishes.
 // Kafka JsonDeserializer maps JSON fields → record components by name.
 public record UrlClickedEvent(
-        UUID   urlId,       // which URL was clicked
+        Long   urlId,       // which URL was clicked
         String slug,        // the short code e.g. "abc123"
         String userAgent,   // browser/device string
         String ipHash,      // SHA-256 of IP — GDPR-compliant, not raw IP
