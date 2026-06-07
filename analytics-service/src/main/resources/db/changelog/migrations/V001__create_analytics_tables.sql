@@ -27,3 +27,6 @@ CREATE INDEX idx_click_events_url_id     ON click_events(url_id);
 CREATE INDEX idx_click_events_clicked_at ON click_events(clicked_at);
 CREATE INDEX idx_click_hourly_url_id     ON click_hourly(url_id);
 CREATE INDEX idx_click_hourly_hour       ON click_hourly(hour);
+
+-- changeset shortlyai:4
+ALTER TABLE click_events ALTER COLUMN url_id TYPE BIGINT USING url_id::text::bigint;
