@@ -37,3 +37,4 @@ CREATE TABLE shedlock (
 -- changeset shortlyai:4
 ALTER TABLE urls DROP COLUMN user_id;
 ALTER TABLE urls ADD COLUMN user_id UUID NOT NULL;
+
