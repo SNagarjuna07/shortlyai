@@ -30,17 +30,16 @@ spring:
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:redis123}
 
-  # Kafka — consume url.clicks events published by url-service
+  # Kafka — consume events published by url-service
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     consumer:
-      group-id: analytics-service-group  # consumer group — Kafka tracks offset per group
+      group-id: analytics-service-group  # consumer group - Kafka tracks offset per group
       auto-offset-reset: earliest         # on first start, read from beginning
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.springframework.kafka.support.serializer.JacksonJsonDeserializer
       properties:
         spring.json.trusted.packages: "com.shortlyai.*"  # whitelist our event classes
-        spring.json.value.default.type: com.shortlyai.analytics.events.UrlClickedEvent
 
 server:
   port: 8083
