@@ -12,6 +12,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.UUID;
+
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("${api.prefix}/urls")
@@ -23,7 +25,7 @@ public class UrlController {
     @PostMapping
     public ResponseEntity<ShortenResponse> shortenURL(
             @Valid @RequestBody ShortenRequest request,
-            @AuthenticationPrincipal Long userId
+            @AuthenticationPrincipal UUID userId
     ) {
 
         log.info("Create URL request from userId={}", userId);
@@ -37,7 +39,7 @@ public class UrlController {
 
     @GetMapping
     public ResponseEntity<Page<ShortenResponse>> getAllUrls(
-            @AuthenticationPrincipal Long userId,
+            @AuthenticationPrincipal UUID userId,
             Pageable pageable
     ) {
 
@@ -49,7 +51,7 @@ public class UrlController {
     @GetMapping("/{id}")
     public ResponseEntity<ShortenResponse> getUrl(
             @PathVariable Long id,
-            @AuthenticationPrincipal Long userId
+            @AuthenticationPrincipal UUID userId
     ) {
 
         log.info("Get URL id={} for userId={}", id, userId);
@@ -61,7 +63,7 @@ public class UrlController {
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteUrl(
             @PathVariable Long id,
-            @AuthenticationPrincipal Long userId
+            @AuthenticationPrincipal UUID userId
     ) {
 
         log.info("Delete URL id={} for userId={}", id, userId);

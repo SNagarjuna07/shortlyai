@@ -13,6 +13,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.UUID;
 
 // OncePerRequestFilter guarantees this runs exactly once per HTTP request
 // Spring's filter chain can call filters multiple times in some dispatch scenarios
@@ -37,11 +38,11 @@ public class HeaderAuthFilter extends OncePerRequestFilter {
         if (userId != null && SecurityContextHolder.getContext().getAuthentication() == null) {
 
             try {
-                // Parse String → Long — service layer expects Long
-                Long parsedUserId = Long.parseLong(userId);
+                // Parse String -> UUID — service layer expects UUID
+                UUID parsedUserId = UUID.fromString(userId);
 
                 // Standard Spring Security way to represent an authenticated user
-                // Principal = Long userId, credentials = null, role = USER
+                // Principal = UUID userId, credentials = null, role = USER
                 UsernamePasswordAuthenticationToken auth =
                         new UsernamePasswordAuthenticationToken(
                                 parsedUserId,
@@ -54,7 +55,7 @@ public class HeaderAuthFilter extends OncePerRequestFilter {
 
                 log.debug("Authenticated userId={}", parsedUserId);
 
-            } catch (NumberFormatException e) {
+            } catch (IllegalArgumentException e) {
                 // Header present but not a valid Long — gateway bug or tampering
                 // No auth set — request hits .authenticated() and gets 403
                 log.warn("Invalid X-User-Id header value: {}", userId);

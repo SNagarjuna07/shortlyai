@@ -5,6 +5,7 @@ import com.shortlyai.url.common.dto.ShortenResponse;
 import com.shortlyai.url.common.exception.DuplicateSlugException;
 import com.shortlyai.url.common.exception.UrlNotFoundException;
 import com.shortlyai.url.events.UrlCreatedEvent;
+import com.shortlyai.url.events.UrlDeletedEvent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
@@ -13,9 +14,11 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.UUID;
 
 @Service
 @Transactional
@@ -26,7 +29,7 @@ public class ShorteningServiceImpl implements ShorteningService {
 
     private final StringRedisTemplate stringRedisTemplate;
 
-    private final KafkaTemplate<String, UrlCreatedEvent> kafkaTemplate;
+    private final KafkaTemplate<String, Object> kafkaTemplate;
 
     private final String baseDomain;
 
@@ -36,14 +39,17 @@ public class ShorteningServiceImpl implements ShorteningService {
 
     private final String urlCreatedTopic;
 
+    private final String urlDeletedTopic;
+
     public ShorteningServiceImpl(
             UrlRepository urlRepository,
             StringRedisTemplate stringRedisTemplate,
-            KafkaTemplate<String, UrlCreatedEvent> kafkaTemplate,
+            KafkaTemplate<String, Object> kafkaTemplate,
             @Value("${url.base-domain}") String baseDomain,
             @Value("${url.default-expiry-days}") long defaultExpiryDays,
             @Value("${url.cache-ttl-seconds}") long cacheTtlSeconds,
-            @Value("${spring.kafka.topics.url-created}") String urlCreatedTopic) {
+            @Value("${spring.kafka.topics.url-created}") String urlCreatedTopic,
+            @Value("${spring.kafka.topics.url-deleted}") String urlDeletedTopic) {
 
         this.urlRepository = urlRepository;
         this.stringRedisTemplate = stringRedisTemplate;
@@ -52,13 +58,14 @@ public class ShorteningServiceImpl implements ShorteningService {
         this.defaultExpiryDays = defaultExpiryDays;
         this.cacheTtlSeconds = cacheTtlSeconds;
         this.urlCreatedTopic = urlCreatedTopic;
+        this.urlDeletedTopic = urlDeletedTopic;
     }
 
     // Used by REDIS for caching
     private static final String CACHE_PREFIX = "url:";
 
     @Override
-    public ShortenResponse shorten(ShortenRequest request, Long userId) {
+    public ShortenResponse shorten(ShortenRequest request, UUID userId) {
 
         log.info("URL shortening request for userId: {}", userId);
 
@@ -107,25 +114,33 @@ public class ShorteningServiceImpl implements ShorteningService {
         // Cache slug → original URL in Redis
         stringRedisTemplate.opsForValue()
                 .set(
-                CACHE_PREFIX + savedUrl.getSlug(),
-                savedUrl.getOriginalUrl(),
-                Duration.ofSeconds(cacheTtlSeconds)
-        );
+                        CACHE_PREFIX + savedUrl.getSlug(),
+                        savedUrl.getOriginalUrl(),
+                        Duration.ofSeconds(cacheTtlSeconds)
+                );
 
         // Publish kafka event
         kafkaTemplate.send(
-                urlCreatedTopic,           // which mailbox
-                savedUrl.getSlug(),        // routing key — same slug = same partition
-                new UrlCreatedEvent(       // the message
-                        savedUrl.getId(),
-                        savedUrl.getSlug(),
-                        savedUrl.getOriginalUrl(),
-                        baseDomain + "/" + savedUrl.getSlug(),
-                        savedUrl.getUserId(),
-                        savedUrl.getExpiresAt(),
-                        savedUrl.getCreatedAt()
+                        urlCreatedTopic,           // which mailbox
+                        savedUrl.getSlug(),        // routing key — same slug = same partition
+                        new UrlCreatedEvent(       // the message
+                                savedUrl.getId(),
+                                savedUrl.getSlug(),
+                                savedUrl.getOriginalUrl(),
+                                baseDomain + "/" + savedUrl.getSlug(),
+                                savedUrl.getUserId(),
+                                savedUrl.getExpiresAt(),
+                                savedUrl.getCreatedAt()
+                        )
                 )
-        );
+                .whenComplete((result, ex) -> {
+                    if (ex != null) {
+                        log.error("Kafka publish failed: {}", ex.getMessage());
+                    } else {
+                        log.debug("Event published to partition: {}",
+                                result.getRecordMetadata().partition());
+                    }
+                });
 
         log.info(
                 "Created short-url '{}' for userId={}",
@@ -156,8 +171,8 @@ public class ShorteningServiceImpl implements ShorteningService {
 
         // cache miss
         Url shortUrl = urlRepository.findBySlugAndIsActiveTrueAndExpiresAtAfter(
-                    slug,
-                    Instant.now()
+                        slug,
+                        Instant.now()
                 )
                 .orElseThrow(() -> new UrlNotFoundException("URL not found"));
 
@@ -172,7 +187,7 @@ public class ShorteningServiceImpl implements ShorteningService {
     }
 
     @Override
-    public void delete(Long id, Long userId) {
+    public void delete(Long id, UUID userId) {
 
         // fetch URL
         Url url = urlRepository.findByIdAndUserIdAndIsActiveTrue(id, userId)
@@ -190,10 +205,30 @@ public class ShorteningServiceImpl implements ShorteningService {
 
         // cache evict
         stringRedisTemplate.delete(CACHE_PREFIX + url.getSlug());
+
+        kafkaTemplate.send(
+                        urlDeletedTopic, // what event
+                        url.getSlug(), // routing key
+                        new UrlDeletedEvent( // message
+                                url.getId(),
+                                url.getSlug(),
+                                url.getUserId(),
+                                Instant.now()
+                        )
+                )
+                .whenComplete((result, ex) -> {
+                    if (ex != null) {
+                        log.error("Kafka publish failed: {}", ex.getMessage());
+                    } else {
+                        log.debug("Event published to partition: {}",
+                                result.getRecordMetadata().partition());
+                    }
+                });
     }
 
     @Override
-    public ShortenResponse getUrl(Long id, Long userId) {
+    @Transactional(readOnly = true)
+    public ShortenResponse getUrl(Long id, UUID userId) {
 
         Url url = urlRepository.findByIdAndUserIdAndIsActiveTrue(id, userId)
                 .orElseThrow(() -> new UrlNotFoundException("URL not found"));
@@ -202,7 +237,8 @@ public class ShorteningServiceImpl implements ShorteningService {
     }
 
     @Override
-    public Page<ShortenResponse> getUserUrls(Long userId, Pageable pageable) {
+    @Transactional(readOnly = true)
+    public Page<ShortenResponse> getUserUrls(UUID userId, Pageable pageable) {
 
         return urlRepository.findByUserIdAndIsActiveTrueOrderByCreatedAtDesc(userId, pageable)
                 .map(this::mapToResponse);

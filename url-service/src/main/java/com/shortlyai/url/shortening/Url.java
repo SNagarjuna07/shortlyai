@@ -5,6 +5,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.time.Instant;
+import java.util.UUID;
 
 // @Entity — JPA maps this class to the "urls" table in Postgres
 // @Table — explicitly names the table, never rely on JPA's default naming
@@ -30,10 +31,10 @@ public class Url {
     @Column(nullable = false, columnDefinition = "TEXT")
     private String originalUrl;
 
-    // Owner's user ID — plain Long, NOT a JPA relationship
+    // Owner's user ID
     // auth-service owns the users table — cross-service FK = anti-pattern
     @Column(nullable = false)
-    private Long userId;
+    private UUID userId;
 
     // Page title — null until ai-service processes the URL
     @Column(length = 500)

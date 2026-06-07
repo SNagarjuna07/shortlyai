@@ -1,6 +1,7 @@
 package com.shortlyai.url.common.dto;
 
 import java.time.Instant;
+import java.util.UUID;
 
 // Returned after successful URL shortening
 public record ShortenResponse(
@@ -8,7 +9,7 @@ public record ShortenResponse(
         String slug,
         String shortUrl,      // full URL e.g. http://localhost:8082/abc123
         String originalUrl,
-        Long userId,
+        UUID userId,
         boolean isCustom,
         long clickCount,
         Instant expiresAt,
