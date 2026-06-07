@@ -33,3 +33,7 @@ CREATE TABLE shedlock (
     locked_at  TIMESTAMPTZ  NOT NULL,
     locked_by  VARCHAR(255) NOT NULL
 );
+
+-- changeset shortlyai:4
+ALTER TABLE urls DROP COLUMN user_id;
+ALTER TABLE urls ADD COLUMN user_id UUID NOT NULL;
