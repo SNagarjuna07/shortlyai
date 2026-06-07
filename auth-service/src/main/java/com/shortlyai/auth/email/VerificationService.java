@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
@@ -45,6 +46,7 @@ public class VerificationService {
 
     }
 
+    @Transactional
     public void verifyAccount(String token) {
 
         // get userId from Redis

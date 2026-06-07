@@ -20,7 +20,7 @@ public class RefreshToken {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id; // token's id
 
-    @Column(name = "user_id")
+    @Column(name = "user_id", nullable = false)
     private UUID userId; // belongs to which user
 
     @Column(name = "token_hash", nullable = false, unique = true)

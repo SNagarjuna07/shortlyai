@@ -45,7 +45,7 @@ public class AuditLogService {
     }
 
     // Overload — for events with no userId (login failures before user found)
-    @Async
+    @Async("auditExecutor")
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void log(AuditEventType eventType, HttpServletRequest request) {
 

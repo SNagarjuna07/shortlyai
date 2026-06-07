@@ -1,6 +1,5 @@
 package com.shortlyai.auth.authentication;
 
-import com.nimbusds.oauth2.sdk.http.HTTPRequest;
 import com.shortlyai.auth.dto.*;
 import com.shortlyai.auth.email.VerificationService;
 import jakarta.servlet.http.HttpServletRequest;

@@ -15,12 +15,16 @@ public class EmailService {
 
     private final String fromEmail;
 
+    private final String baseUrl;
+
     public EmailService(
             JavaMailSender javaMailSender,
-            @Value("${spring.mail.username}") String fromEmail
+            @Value("${spring.mail.username}") String fromEmail,
+            @Value("${app.base-url}") String baseUrl
     ) {
         this.javaMailSender = javaMailSender;
         this.fromEmail = fromEmail;
+        this.baseUrl = baseUrl;
     }
 
     @Async("emailExecutor")
@@ -30,7 +34,10 @@ public class EmailService {
 
         mailMessage.setSubject("Verify your ShortlyAI account");
 
-        mailMessage.setText("Hi, " + userName + "\nPlease click this link to verify your ShortlyAI account\n" + "http://localhost:8081/api/v1/auth/verify?token=" + token);
+        mailMessage.setText("Hi, "
+                + userName
+                + "\nPlease click this link to verify your ShortlyAI account\n"
+                + baseUrl + token);
 
         mailMessage.setFrom(fromEmail);
 

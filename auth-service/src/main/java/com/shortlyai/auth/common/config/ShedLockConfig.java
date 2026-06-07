@@ -9,7 +9,6 @@ import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 @Configuration
-@EnableScheduling
 @EnableSchedulerLock(defaultLockAtMostFor = "10m")
 public class ShedLockConfig {
 

@@ -4,6 +4,9 @@ api:
 oauth2:
   redirect-uri: ${OAUTH2_REDIRECT_URI:http://localhost:9999/oauth2/callback}
 
+app:
+  base-url: http://localhost:8081/api/v1/auth/verify?token=
+
 spring:
   application:
     name: auth-service
@@ -64,6 +67,7 @@ spring:
           auth: true
           starttls:
             enable: true
+            required: true
 
 server:
   port: 8081
