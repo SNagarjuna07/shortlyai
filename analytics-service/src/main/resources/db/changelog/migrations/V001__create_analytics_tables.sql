@@ -1,3 +1,5 @@
+-- liquibase formatted sql
+
 -- changeset shortlyai:1
 -- Raw click events — one row per click, consumed from Kafka
 CREATE TABLE click_events (
