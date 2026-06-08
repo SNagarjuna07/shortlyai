@@ -124,31 +124,11 @@ public class ShorteningServiceImpl implements ShorteningService {
                 Duration.ofSeconds(cacheTtlSeconds)
         );
 
-        // Publish kafka event
-        kafkaTemplate.send(
-                        urlCreatedTopic,           // which mailbox
-                        savedUrl.getSlug(),        // routing key — same slug = same partition
-                        new UrlCreatedEvent(       // the message
-                                savedUrl.getId(),
-                                savedUrl.getSlug(),
-                                savedUrl.getOriginalUrl(),
-                                baseDomain + "/" + savedUrl.getSlug(),
-                                savedUrl.getUserId(),
-                                savedUrl.getExpiresAt(),
-                                savedUrl.getCreatedAt()
-                        )
-                )
-                .whenComplete((result, ex) -> {
-                    if (ex != null) {
-                        log.error("Kafka publish failed: {}", ex.getMessage());
-                    } else {
-                        log.debug("Event published to partition: {}",
-                                result.getRecordMetadata().partition());
-                    }
-                });
+        // Publish kafka event - async because of CompletableFuture
+        publishCreatedEvent(savedUrl);
 
         log.info(
-                "Created short-url '{}' for userId={}",
+                "Created short-url '{}' for userId: {}",
                 savedUrl.getSlug(),
                 userId
         );
@@ -223,24 +203,8 @@ public class ShorteningServiceImpl implements ShorteningService {
         // cache evict
         stringRedisTemplate.delete(CACHE_PREFIX + url.getSlug());
 
-        kafkaTemplate.send(
-                        urlDeletedTopic, // what event
-                        url.getSlug(), // routing key
-                        new UrlDeletedEvent( // message
-                                url.getId(),
-                                url.getSlug(),
-                                url.getUserId(),
-                                Instant.now()
-                        )
-                )
-                .whenComplete((result, ex) -> {
-                    if (ex != null) {
-                        log.error("Kafka publish failed: {}", ex.getMessage());
-                    } else {
-                        log.debug("Event published to partition: {}",
-                                result.getRecordMetadata().partition());
-                    }
-                });
+       // publish Kafka - async
+        publishDeletedEvent(url);
     }
 
     @Override
@@ -276,9 +240,48 @@ public class ShorteningServiceImpl implements ShorteningService {
         );
     }
 
+    private void publishCreatedEvent(Url savedUrl) {
+        String slug  = savedUrl.getSlug();   // capture - lambda needs final
+        Long   urlId = savedUrl.getId();
+
+        kafkaTemplate.send(urlCreatedTopic, slug,
+                new UrlCreatedEvent(
+                        urlId, slug, savedUrl.getOriginalUrl(),
+                        baseDomain + "/" + slug, savedUrl.getUserId(),
+                        savedUrl.getExpiresAt(), savedUrl.getCreatedAt()
+                )
+        ).whenComplete((result, ex) -> {
+            if (ex != null) {
+                log.error("Kafka publish failed: topic={} slug={} error={}",
+                        urlCreatedTopic, slug, ex.getMessage());
+            } else {
+                log.debug("Published url.created: topic={} slug={} urlId={} partition={}",
+                        urlCreatedTopic, slug, urlId,
+                        result.getRecordMetadata().partition());
+            }
+        });
+    }
+
+    private void publishDeletedEvent(Url url) {
+        String slug  = url.getSlug();
+        Long   urlId = url.getId();
+
+        kafkaTemplate.send(urlDeletedTopic, slug,
+                new UrlDeletedEvent(urlId, slug, url.getUserId(), Instant.now())
+        ).whenComplete((result, ex) -> {
+            if (ex != null) {
+                log.error("Kafka publish failed: topic={} slug={} error={}",
+                        urlDeletedTopic, slug, ex.getMessage());
+            } else {
+                log.debug("Published url.deleted: topic={} slug={} urlId={} partition={}",
+                        urlDeletedTopic, slug, urlId,
+                        result.getRecordMetadata().partition());
+            }
+        });
+    }
+
     private void publishClickEvent(Long urlId, String slug, HttpServletRequest request) {
-        String rawIp = request.getRemoteAddr();
-        String ipHash = sha256(rawIp);  // see below
+        String ipHash = sha256(request.getRemoteAddr());
 
         kafkaTemplate.send(
                 urlClickedTopic,
@@ -292,7 +295,14 @@ public class ShorteningServiceImpl implements ShorteningService {
                         Instant.now()
                 )
         ).whenComplete((result, ex) -> {
-            if (ex != null) log.error("Click event publish failed: {}", ex.getMessage());
+            if (ex != null) {
+                log.error("Kafka publish failed: topic= {} slug= {} error= {}",
+                        urlClickedTopic, slug, ex.getMessage());
+            } else {
+                log.debug("Published url.clicked: topic={} slug={} urlId={} partition={}",
+                        urlClickedTopic, slug, urlId,
+                        result.getRecordMetadata().partition());
+            }
         });
     }
 

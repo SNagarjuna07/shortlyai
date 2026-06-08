@@ -6,15 +6,12 @@ import com.shortlyai.analytics.clicks.ClickHourlyRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
-import org.springframework.data.domain.Pageable;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
-
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
-import java.util.UUID;
 
 @Slf4j
 @Component
@@ -35,17 +32,16 @@ public class RollupScheduler {
     @Transactional
     public void rollupPreviousHour() {
         // Calculate previous hour window e.g. if now=14:05, window=13:00 → 14:00
-        Instant now = Instant.now().truncatedTo(ChronoUnit.HOURS);
-        Instant hourFrom = now.minus(1, ChronoUnit.HOURS);
-        Instant hourTo = now;
+        Instant hourTo = Instant.now().truncatedTo(ChronoUnit.HOURS);
+        Instant hourFrom = hourTo.minus(1, ChronoUnit.HOURS);
 
         log.info("Starting hourly rollup for window {} -> {}", hourFrom, hourTo);
 
         // Get all unique urlIds that had clicks in this hour
-        List<UUID> urlIds = clickEventRepository
+        List<Long> urlIds = clickEventRepository
                 .findDistinctUrlIdsBetween(hourFrom, hourTo);
 
-        for (UUID urlId : urlIds) {
+        for (Long urlId : urlIds) {
             long count = clickEventRepository
                     .countByUrlIdAndClickedAtBetween(urlId, hourFrom, hourTo);
 

@@ -5,12 +5,9 @@ import com.shortlyai.analytics.events.UrlCreatedEvent;
 import com.shortlyai.analytics.events.UrlDeletedEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import java.util.UUID;
 
 @Slf4j
 @Service
@@ -51,7 +48,7 @@ public class ClickService {
 
     // Called by stats controller — total click count for a URL
     @Transactional(readOnly = true) // readOnly = true Hibernate skips dirty checking, faster
-    public long getTotalClicks(UUID urlId) {
+    public long getTotalClicks(Long urlId) {
         // Try Redis first (real-time counter) — fast path
         String redisKey = "clicks:realtime:" + urlId;
         String cached = redisTemplate.opsForValue().get(redisKey);

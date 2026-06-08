@@ -5,7 +5,6 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.time.Instant;
-import java.util.UUID;
 
 @Entity
 @Table(name = "click_hourly")
@@ -18,7 +17,7 @@ public class ClickHourly {
     private Long id;
 
     @Column(name = "url_id", nullable = false)
-    private UUID urlId;
+    private Long urlId;
 
     @Column(nullable = false)
     private Instant hour;         // truncated to hour e.g. 2025-01-01T14:00:00Z
@@ -26,9 +25,9 @@ public class ClickHourly {
     @Column(name = "click_count", nullable = false)
     private long clickCount;
 
-    protected ClickHourly() {}
+    protected ClickHourly() {} // JPA requires no-arg constructor
 
-    public ClickHourly(UUID urlId, Instant hour, long clickCount) {
+    public ClickHourly(Long urlId, Instant hour, long clickCount) {
         this.urlId      = urlId;
         this.hour       = hour;
         this.clickCount = clickCount;

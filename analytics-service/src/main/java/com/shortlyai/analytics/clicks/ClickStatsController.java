@@ -10,11 +10,11 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ClickStatsController {
 
-    private final ClickService clickService; // thin controller — one call, done
+    private final ClickService clickService;
 
-    // GET /api/v1/analytics/{urlId} → returns total click count
+    // GET /api/v1/analytics/{urlId} -> returns total click count
     @GetMapping("/{urlId}")
-    public ResponseEntity<ClickStatsResponse> getStats(@PathVariable UUID urlId) {
+    public ResponseEntity<ClickStatsResponse> getStats(@PathVariable Long urlId) {
         long total = clickService.getTotalClicks(urlId);
         return ResponseEntity.ok(new ClickStatsResponse(urlId, total, "OK"));
     }
