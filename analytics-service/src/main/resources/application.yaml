@@ -40,6 +40,8 @@ spring:
       value-deserializer: org.springframework.kafka.support.serializer.JacksonJsonDeserializer
       properties:
         spring.json.trusted.packages: "com.shortlyai.*"  # whitelist our event classes
+        reconnect.backoff.ms: 1000  # wait 1s before reconnect attempt
+        reconnect.backoff.max.ms: 10000  # max 10s between reconnect attempts
 
 server:
   port: 8083
