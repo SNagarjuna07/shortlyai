@@ -63,6 +63,12 @@
             <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
 
+        <!-- Spring Security - HeaderAuthFilter, SecurityFilterChain -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+
         <!-- ShedLock — hourly rollup + real-time Redis cleanup jobs -->
         <dependency>
             <groupId>net.javacrumbs.shedlock</groupId>
