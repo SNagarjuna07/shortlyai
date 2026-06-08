@@ -5,9 +5,14 @@ import com.shortlyai.analytics.events.UrlCreatedEvent;
 import com.shortlyai.analytics.events.UrlDeletedEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.List;
 
 @Slf4j
 @Service
@@ -17,6 +22,7 @@ public class ClickService {
     private final ClickEventRepository clickEventRepository;
     private final BloomFilterService bloomFilterService;
     private final StringRedisTemplate redisTemplate;
+    private final ClickHourlyRepository clickHourlyRepository;
 
     // Called by Kafka consumer for every url.clicks event
     @Transactional  // wraps DB insert in a transaction — rolls back if save fails
@@ -80,5 +86,39 @@ public class ClickService {
         redisTemplate.delete("clicks:realtime:" + event.slug());
 
         log.info("Deleted click data for slug: {} urlId: {}", event.slug(), event.id());
+    }
+
+    // Queries hourly rollup table for a URL over last N hours
+    @Transactional(readOnly = true)
+    public List<HourlyBreakdownResponse> getHourlyBreakdown(Long urlId, int hours) {
+
+        List<ClickHourly> clicks = clickHourlyRepository.findByUrlIdSince(
+                urlId,
+                Instant.now()
+                        .minus(hours, ChronoUnit.HOURS)
+        );
+
+        return clicks
+                .stream()
+                .map(row ->
+                        new HourlyBreakdownResponse(
+                                row.getHour(),
+                                row.getClickCount()
+                        )
+                )
+                .toList();
+
+    }
+
+    // Queries raw click_events grouped by urlId. Returns top N by click count
+    @Transactional(readOnly = true)
+    public List<TopUrlResponse> getTopUrls(int limit) {
+
+        return clickEventRepository.findTopUrls(
+                PageRequest.of(
+                        0,
+                        limit
+                )
+        );
     }
 }

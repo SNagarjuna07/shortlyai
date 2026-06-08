@@ -44,6 +44,11 @@ spring:
       acks: all
       properties:
         spring.json.add.type.headers: false # wait for all replicas — no data loss
+        max.block.ms: 3000  # fail fast in 3s instead of blocking 60s
+        reconnect.backoff.ms: 1000      # wait 1s before reconnect attempt
+        reconnect.backoff.max.ms: 10000 # max 10s between reconnect attempts
+        retry.backoff.ms: 1000      # wait 1s between retries
+      retries: 3
     topics:
       url-created: ${URL_CREATED_EVENT:url.created}
       url-clicked: ${URL_CLICKED_EVENT:url.clicks}

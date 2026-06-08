@@ -53,9 +53,9 @@ public interface UrlRepository extends JpaRepository<Url, Long> {
     @Query("""
                UPDATE Url u
                SET u.clickCount = u.clickCount + 1
-               WHERE u.slug = :slug
+               WHERE u.id = :urlId
     """)
-    void incrementClickCount(@Param("slug") String slug);
+    void incrementClickCount(@Param("urlId") Long urlId);
 
     // For loading only the user's URL's. Prevents loading other user's URLs.
     Optional<Url> findByIdAndUserIdAndIsActiveTrue(Long id, UUID userId);

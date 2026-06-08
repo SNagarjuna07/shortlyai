@@ -138,7 +138,7 @@ public class ShorteningServiceImpl implements ShorteningService {
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional()
     public String resolve(String slug, HttpServletRequest request) {
 
         String cached = stringRedisTemplate.opsForValue()
@@ -159,6 +159,9 @@ public class ShorteningServiceImpl implements ShorteningService {
             // publish click also on cache hit
             publishClickEvent(urlId, slug, request);
 
+            // Increment click counter in DB
+            urlRepository.incrementClickCount(urlId);
+
             return originalUrl;
         }
 
@@ -174,11 +177,15 @@ public class ShorteningServiceImpl implements ShorteningService {
         // save to REDIS
         stringRedisTemplate.opsForValue().set(
                 CACHE_PREFIX + slug,
-                shortUrl.getOriginalUrl(),
+                shortUrl.getId() + "|" + shortUrl.getOriginalUrl(), // <- same format
                 Duration.ofSeconds(cacheTtlSeconds)
         );
 
+        // publish Kafka async
         publishClickEvent(shortUrl.getId(), slug, request);
+
+        // Increment the click count in DB
+        urlRepository.incrementClickCount(shortUrl.getId());
 
         return shortUrl.getOriginalUrl();
     }
@@ -203,7 +210,7 @@ public class ShorteningServiceImpl implements ShorteningService {
         // cache evict
         stringRedisTemplate.delete(CACHE_PREFIX + url.getSlug());
 
-       // publish Kafka - async
+        // publish Kafka - async
         publishDeletedEvent(url);
     }
 
@@ -241,8 +248,8 @@ public class ShorteningServiceImpl implements ShorteningService {
     }
 
     private void publishCreatedEvent(Url savedUrl) {
-        String slug  = savedUrl.getSlug();   // capture - lambda needs final
-        Long   urlId = savedUrl.getId();
+        String slug = savedUrl.getSlug();   // capture - lambda needs final
+        Long urlId = savedUrl.getId();
 
         kafkaTemplate.send(urlCreatedTopic, slug,
                 new UrlCreatedEvent(
@@ -263,8 +270,8 @@ public class ShorteningServiceImpl implements ShorteningService {
     }
 
     private void publishDeletedEvent(Url url) {
-        String slug  = url.getSlug();
-        Long   urlId = url.getId();
+        String slug = url.getSlug();
+        Long urlId = url.getId();
 
         kafkaTemplate.send(urlDeletedTopic, slug,
                 new UrlDeletedEvent(urlId, slug, url.getUserId(), Instant.now())
