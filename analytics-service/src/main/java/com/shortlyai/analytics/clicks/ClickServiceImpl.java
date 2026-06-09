@@ -17,7 +17,7 @@ import java.util.List;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class ClickService {
+public class ClickServiceImpl implements ClickService {
 
     private final ClickEventRepository clickEventRepository;
     private final BloomFilterService bloomFilterService;

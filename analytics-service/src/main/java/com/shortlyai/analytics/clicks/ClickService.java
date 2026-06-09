@@ -1,0 +1,22 @@
+package com.shortlyai.analytics.clicks;
+
+import com.shortlyai.analytics.events.UrlClickedEvent;
+import com.shortlyai.analytics.events.UrlCreatedEvent;
+import com.shortlyai.analytics.events.UrlDeletedEvent;
+
+import java.util.List;
+
+public interface ClickService {
+
+    void processClick(UrlClickedEvent event);
+
+    long getTotalClicks(Long urlId);
+
+    void initializeCounter(UrlCreatedEvent event);
+
+    void deleteClickData(UrlDeletedEvent event);
+
+    List<HourlyBreakdownResponse> getHourlyBreakdown(Long urlId, int hours);
+
+    List<TopUrlResponse> getTopUrls(int limit);
+}
