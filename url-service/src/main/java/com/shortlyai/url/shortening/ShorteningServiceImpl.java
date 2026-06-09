@@ -4,6 +4,7 @@ import com.shortlyai.url.common.dto.ShortenRequest;
 import com.shortlyai.url.common.dto.ShortenResponse;
 import com.shortlyai.url.common.exception.DuplicateSlugException;
 import com.shortlyai.url.common.exception.UrlNotFoundException;
+import com.shortlyai.url.dlq.FailedEventService;
 import com.shortlyai.url.events.UrlClickedEvent;
 import com.shortlyai.url.events.UrlCreatedEvent;
 import com.shortlyai.url.events.UrlDeletedEvent;
@@ -33,6 +34,8 @@ public class ShorteningServiceImpl implements ShorteningService {
 
     private final KafkaTemplate<String, Object> kafkaTemplate;
 
+    private final FailedEventService failedEventService;
+
     private final String baseDomain;
 
     private final long defaultExpiryDays;
@@ -54,11 +57,12 @@ public class ShorteningServiceImpl implements ShorteningService {
             @Value("${url.cache-ttl-seconds}") long cacheTtlSeconds,
             @Value("${spring.kafka.topics.url-created}") String urlCreatedTopic,
             @Value("${spring.kafka.topics.url-clicked}") String urlClickedTopic,
-            @Value("${spring.kafka.topics.url-deleted}") String urlDeletedTopic) {
+            @Value("${spring.kafka.topics.url-deleted}") String urlDeletedTopic, FailedEventService failedEventService) {
 
         this.urlRepository = urlRepository;
         this.stringRedisTemplate = stringRedisTemplate;
         this.kafkaTemplate = kafkaTemplate;
+        this.failedEventService = failedEventService;
         this.baseDomain = baseDomain;
         this.defaultExpiryDays = defaultExpiryDays;
         this.cacheTtlSeconds = cacheTtlSeconds;
@@ -248,70 +252,78 @@ public class ShorteningServiceImpl implements ShorteningService {
     }
 
     private void publishCreatedEvent(Url savedUrl) {
-        String slug = savedUrl.getSlug();   // capture - lambda needs final
+
+        String slug = savedUrl.getSlug();
         Long urlId = savedUrl.getId();
 
-        kafkaTemplate.send(urlCreatedTopic, slug,
-                new UrlCreatedEvent(
-                        urlId, slug, savedUrl.getOriginalUrl(),
-                        baseDomain + "/" + slug, savedUrl.getUserId(),
-                        savedUrl.getExpiresAt(), savedUrl.getCreatedAt()
-                )
-        ).whenComplete((result, ex) -> {
-            if (ex != null) {
-                log.error("Kafka publish failed: topic={} slug={} error={}",
-                        urlCreatedTopic, slug, ex.getMessage());
-            } else {
-                log.debug("Published url.created: topic={} slug={} urlId={} partition={}",
-                        urlCreatedTopic, slug, urlId,
-                        result.getRecordMetadata().partition());
-            }
-        });
+        // Build event once - reuse in both send and DLQ save (if needed)
+        UrlCreatedEvent event = new UrlCreatedEvent(
+                urlId, slug, savedUrl.getOriginalUrl(),
+                baseDomain + "/" + slug, savedUrl.getUserId(),
+                savedUrl.getExpiresAt(), savedUrl.getCreatedAt()
+        );
+
+        kafkaTemplate.send(urlCreatedTopic, slug, event)
+                .whenComplete((result, ex) -> {
+                    if (ex != null) {
+                        log.error("Kafka publish failed: topic={} slug={} error={}",
+                                urlCreatedTopic, slug, ex.getMessage());
+                        failedEventService.save(urlCreatedTopic, slug, event, ex.getMessage());
+                    } else {
+                        log.debug("Published url.created: topic={} slug={} urlId={} partition={}",
+                                urlCreatedTopic, slug, urlId,
+                                result.getRecordMetadata().partition());
+                    }
+                });
     }
 
     private void publishDeletedEvent(Url url) {
+
         String slug = url.getSlug();
         Long urlId = url.getId();
 
-        kafkaTemplate.send(urlDeletedTopic, slug,
-                new UrlDeletedEvent(urlId, slug, url.getUserId(), Instant.now())
-        ).whenComplete((result, ex) -> {
-            if (ex != null) {
-                log.error("Kafka publish failed: topic={} slug={} error={}",
-                        urlDeletedTopic, slug, ex.getMessage());
-            } else {
-                log.debug("Published url.deleted: topic={} slug={} urlId={} partition={}",
-                        urlDeletedTopic, slug, urlId,
-                        result.getRecordMetadata().partition());
-            }
-        });
+        UrlDeletedEvent event = new UrlDeletedEvent(urlId, slug, url.getUserId(), Instant.now());
+
+        kafkaTemplate.send(urlDeletedTopic, slug, event)
+                .whenComplete((result, ex) -> {
+                    if (ex != null) {
+                        log.error("Kafka publish failed: topic={} slug={} error={}",
+                                urlDeletedTopic, slug, ex.getMessage());
+                        failedEventService.save(urlDeletedTopic, slug, event, ex.getMessage());
+                    } else {
+                        log.debug("Published url.deleted: topic={} slug={} urlId={} partition={}",
+                                urlDeletedTopic, slug, urlId,
+                                result.getRecordMetadata().partition());
+                    }
+                });
     }
 
     private void publishClickEvent(Long urlId, String slug, HttpServletRequest request) {
+
         String ipHash = sha256(request.getRemoteAddr());
 
-        kafkaTemplate.send(
-                urlClickedTopic,
-                slug,
-                new UrlClickedEvent(
-                        urlId,
-                        slug,
-                        request.getHeader("User-Agent"),
-                        ipHash,
-                        request.getHeader("Referer"),
-                        Instant.now()
-                )
-        ).whenComplete((result, ex) -> {
-            if (ex != null) {
-                log.error("Kafka publish failed: topic= {} slug= {} error= {}",
-                        urlClickedTopic, slug, ex.getMessage());
-            } else {
-                log.debug("Published url.clicked: topic={} slug={} urlId={} partition={}",
-                        urlClickedTopic, slug, urlId,
-                        result.getRecordMetadata().partition());
-            }
-        });
+        UrlClickedEvent event = new UrlClickedEvent(
+                urlId, slug,
+                request.getHeader("User-Agent"),
+                ipHash,
+                request.getHeader("Referer"),
+                Instant.now()
+        );
+
+        kafkaTemplate.send(urlClickedTopic, slug, event)
+                .whenComplete((result, ex) -> {
+                    if (ex != null) {
+                        log.error("Kafka publish failed: topic={} slug={} error={}",
+                                urlClickedTopic, slug, ex.getMessage());
+                        failedEventService.save(urlClickedTopic, slug, event, ex.getMessage());
+                    } else {
+                        log.debug("Published url.clicked: topic={} slug={} urlId={} partition={}",
+                                urlClickedTopic, slug, urlId,
+                                result.getRecordMetadata().partition());
+                    }
+                });
     }
+
 
     private String sha256(String input) {
 
