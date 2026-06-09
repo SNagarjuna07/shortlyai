@@ -102,6 +102,13 @@
             <artifactId>shedlock-provider-redis-spring</artifactId>
         </dependency>
 
+        <!-- JSON logging in prod via logstash encoder -->
+        <dependency>
+            <groupId>net.logstash.logback</groupId>
+            <artifactId>logstash-logback-encoder</artifactId>
+            <version>9.0</version>
+        </dependency>
+
         <!-- Sending mail -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

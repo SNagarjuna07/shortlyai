@@ -80,6 +80,13 @@
             <artifactId>resilience4j-spring</artifactId>
         </dependency>
 
+        <!-- JSON logging in prod via logstash encoder -->
+        <dependency>
+            <groupId>net.logstash.logback</groupId>
+            <artifactId>logstash-logback-encoder</artifactId>
+            <version>9.0</version>
+        </dependency>
+
         <!-- Validation — @Valid on shorten request record -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
