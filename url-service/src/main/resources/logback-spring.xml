@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+    <!-- Import Spring Boot's default base config (color, levels) -->
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <!-- ============================================================
+         DEV PROFILE — human-readable colored console output
+         Active when: spring.profiles.active=dev (or not set)
+    ============================================================ -->
+    <springProfile name="!prod">
+
+        <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder>
+                <!-- %clr — Spring Boot color codes for log level
+                     %d    — timestamp
+                     %mdc  — MDC vars e.g. traceId set by gateway
+                     %msg  — log message
+                     %n    — newline -->
+                <pattern>
+                    %clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr(%5p) %clr(${PID:- }){magenta} %clr(---){faint} %clr([%15.15t]){faint} %clr(%-40.40logger{39}){cyan} %clr(:){faint} [traceId=%mdc{traceId:-none}] %msg%n%throwable
+                </pattern>
+            </encoder>
+        </appender>
+
+        <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+            <file>logs/url-service.log</file>
+            <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+                <fileNamePattern>logs/url-service.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+                <maxFileSize>10MB</maxFileSize>   <!-- roll when file hits 10MB -->
+                <maxHistory>7</maxHistory>        <!-- keep 7 days of logs -->
+                <totalSizeCap>500MB</totalSizeCap><!-- delete oldest if total exceeds 500MB -->
+            </rollingPolicy>
+            <encoder>
+                <pattern>%d{HH:mm:ss.SSS} %5p --- %-40.40logger{39} : [trace=%mdc{traceId:-none}] %msg%n%throwable</pattern>
+            </encoder>
+        </appender>
+
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+
+        <!-- DEBUG for our own code only — not the whole framework -->
+        <logger name="com.shortlyai" level="DEBUG"/>
+
+    </springProfile>
+
+    <!-- ============================================================
+         PROD PROFILE — structured JSON for Loki/Grafana ingestion
+         Active when: spring.profiles.active=prod
+    ============================================================ -->
+    <springProfile name="prod">
+
+        <appender name="JSON_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+                <!-- Add service name field to every JSON log line -->
+                <customFields>{"service":"url-service"}</customFields>
+
+                <!-- Include MDC fields (traceId etc.) as top-level JSON fields -->
+                <includeMdcKeyName>traceId</includeMdcKeyName>
+            </encoder>
+        </appender>
+
+        <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+            <file>logs/url-service.log</file>
+            <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+                <fileNamePattern>logs/url-service.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+                <maxFileSize>10MB</maxFileSize>   <!-- roll when file hits 10MB -->
+                <maxHistory>7</maxHistory>        <!-- keep 7 days of logs -->
+                <totalSizeCap>500MB</totalSizeCap><!-- delete oldest if total exceeds 500MB -->
+            </rollingPolicy>
+            <encoder>
+                <pattern>%d{HH:mm:ss.SSS} %5p --- %-40.40logger{39} : [trace=%mdc{traceId:-none}] %msg%n%throwable</pattern>
+            </encoder>
+        </appender>
+
+        <root level="INFO">
+            <appender-ref ref="JSON_CONSOLE"/>
+        </root>
+
+        <logger name="com.shortlyai" level="INFO"/> <!-- no DEBUG in prod -->
+
+    </springProfile>
+
+</configuration>
