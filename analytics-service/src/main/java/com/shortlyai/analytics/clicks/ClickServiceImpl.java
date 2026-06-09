@@ -83,7 +83,7 @@ public class ClickService {
         clickEventRepository.deleteBySlug(event.slug());
 
         // Delete real-time Redis counter
-        redisTemplate.delete("clicks:realtime:" + event.slug());
+        redisTemplate.delete("clicks:realtime:" + event.id());
 
         log.info("Deleted click data for slug: {} urlId: {}", event.slug(), event.id());
     }
