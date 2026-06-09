@@ -13,10 +13,6 @@ public interface ClickHourlyRepository extends JpaRepository<ClickHourly, Long> 
     // Find existing rollup row — for upsert during rollup job
     Optional<ClickHourly> findByUrlIdAndHour(Long urlId, Instant hour);
 
-    // All distinct urlIds that had clicks in a time window — rollup job iterates these
-    @Query("SELECT DISTINCT c.urlId FROM ClickHourly c WHERE c.hour >= :from")
-    List<Long> findDistinctUrlIdsSince(Instant from);
-
     // All hourly buckets for a URL from a point in time forward
     // Service passes Instant.now().minus(24, HOURS) for last 24h
     // Results ordered ascending — oldest hour first for chart rendering

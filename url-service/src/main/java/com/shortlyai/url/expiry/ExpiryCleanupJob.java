@@ -29,14 +29,22 @@ public class ExpiryCleanupJob {
 
         log.info("Starting expired URLs cleanup..");
 
-        List<Url> expiredUrls = urlRepository.findAllExpired(Instant.now());
+        List<String> expiredSlugs = urlRepository.findExpiredSlugs(Instant.now());
 
-        // Deactivate all in one query — efficient
+        // Check if it is empty
+        if (expiredSlugs.isEmpty()) {
+
+            log.info("No expired URLs found, skipping");
+
+            return;
+        }
+
+        // Deactivate all in one query - efficient
         int count = urlRepository.deactivateExpiredUrls(Instant.now());
 
         // Evict each from Redis cache
-        expiredUrls.forEach(url ->
-                stringRedisTemplate.delete("url:" + url.getSlug())
+        expiredSlugs.forEach(slug ->
+                stringRedisTemplate.delete("url:" + slug)
         );
 
         log.info("Expired URLs cleanup completed - deactivated {} URLs", count);

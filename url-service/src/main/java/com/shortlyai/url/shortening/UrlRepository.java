@@ -72,4 +72,13 @@ public interface UrlRepository extends JpaRepository<Url, Long> {
 
     // For cache warming job
     Page<Url> findByIsActiveTrueOrderByClickCountDesc(Pageable pageable);
+
+    // Fetch only slugs of expired URLs — no full entity load
+    // Spring Data projection: interface with getter = SELECT slug only
+    @Query("""
+        SELECT u.slug FROM Url u
+        WHERE u.expiresAt < :now
+        AND u.isActive = true
+        """)
+    List<String> findExpiredSlugs(@Param("now") Instant now);
 }

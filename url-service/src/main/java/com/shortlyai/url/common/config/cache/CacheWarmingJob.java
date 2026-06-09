@@ -24,6 +24,9 @@ public class CacheWarmingJob {
 
     private final long ttl;
 
+    // lock key in Redis
+    private static final String WARM_LOCK_KEY = "lock:cache-warming";
+
     public CacheWarmingJob(
             UrlRepository urlRepository,
             StringRedisTemplate stringRedisTemplate,
@@ -35,22 +38,46 @@ public class CacheWarmingJob {
     }
 
     @EventListener(ApplicationReadyEvent.class) // Executes right after Spring is fully loaded
-    @SchedulerLock(name = "cacheWarmingLock", lockAtMostFor = "5m")
+    // @SchedulerLock - doesn't work on @EventListener
     public void cacheWarmup() {
 
-        // Fetch URLs
-        Page<Url> mostActiveUrls = urlRepository
-                .findByIsActiveTrueOrderByClickCountDesc(PageRequest.of(0, 100));
+        // setIfAbsent - atomic, only ONE pod wins
+        // TTL of 5 min - lock auto-releases if pod crashes mid-warmup
+        Boolean acquired = stringRedisTemplate.opsForValue()
+                .setIfAbsent(WARM_LOCK_KEY, "locked", Duration.ofMinutes(5));
 
-        // Set in Redis
-        mostActiveUrls.forEach(url ->
-                stringRedisTemplate.opsForValue().set(
-                        "url:" + url.getSlug(),   // key
-                        url.getId() + "|" + url.getOriginalUrl(),      // value - what redirect needs
-                        Duration.ofSeconds(ttl)
-                )
-        );
+        // Another pod already warming — skip
+        if (!Boolean.TRUE.equals(acquired)) {
 
-        log.info("Cache warmed with {} URLs", mostActiveUrls.getNumberOfElements());
+            log.info("Cache warming already running on another instance, skipping");
+
+            return;
+        }
+
+        try {
+
+            Page<Url> mostActiveUrls = urlRepository
+                    .findByIsActiveTrueOrderByClickCountDesc(
+                            PageRequest.of(
+                                    0,
+                                    100
+                            )
+                    );
+
+            mostActiveUrls.forEach(url ->
+                    stringRedisTemplate.opsForValue().set(
+                            "url:" + url.getSlug(),
+                            url.getId() + "|" + url.getOriginalUrl(),
+                            Duration.ofSeconds(ttl)
+                    )
+            );
+
+            log.info("Cache warmed with {} URLs", mostActiveUrls.getNumberOfElements());
+
+        } finally {
+
+            // Always release lock - even if warmup fails halfway
+            stringRedisTemplate.delete(WARM_LOCK_KEY);
+        }
     }
 }

@@ -9,7 +9,6 @@ import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 @Configuration
-@EnableScheduling          // activates Spring's @Scheduled processing
 @EnableSchedulerLock(defaultLockAtMostFor = "10m") // if job hangs, release lock after 10 min
 public class ShedLockConfig {
 
