@@ -263,85 +263,97 @@ public class ShorteningServiceImpl implements ShorteningService {
                 savedUrl.getExpiresAt(), savedUrl.getCreatedAt()
         );
 
-        kafkaTemplate.send(urlCreatedTopic, slug, event)
-                .whenComplete((result, ex) -> {
-                    if (ex != null) {
-                        log.error("Kafka publish failed: topic={} slug={} error={}",
-                                urlCreatedTopic, slug, ex.getMessage());
-                        failedEventService.save(urlCreatedTopic, slug, event, ex.getMessage());
-                    } else {
-                        log.debug("Published url.created: topic={} slug={} urlId={} partition={}",
-                                urlCreatedTopic, slug, urlId,
-                                result.getRecordMetadata().partition());
-                    }
-                });
-    }
-
-    private void publishDeletedEvent(Url url) {
-
-        String slug = url.getSlug();
-        Long urlId = url.getId();
-
-        UrlDeletedEvent event = new UrlDeletedEvent(urlId, slug, url.getUserId(), Instant.now());
-
-        kafkaTemplate.send(urlDeletedTopic, slug, event)
-                .whenComplete((result, ex) -> {
-                    if (ex != null) {
-                        log.error("Kafka publish failed: topic={} slug={} error={}",
-                                urlDeletedTopic, slug, ex.getMessage());
-                        failedEventService.save(urlDeletedTopic, slug, event, ex.getMessage());
-                    } else {
-                        log.debug("Published url.deleted: topic={} slug={} urlId={} partition={}",
-                                urlDeletedTopic, slug, urlId,
-                                result.getRecordMetadata().partition());
-                    }
-                });
-    }
-
-    private void publishClickEvent(Long urlId, String slug, HttpServletRequest request) {
-
-        String ipHash = sha256(request.getRemoteAddr());
-
-        UrlClickedEvent event = new UrlClickedEvent(
-                urlId, slug,
-                request.getHeader("User-Agent"),
-                ipHash,
-                request.getHeader("Referer"),
-                Instant.now()
-        );
-
-        kafkaTemplate.send(urlClickedTopic, slug, event)
-                .whenComplete((result, ex) -> {
-                    if (ex != null) {
-                        log.error("Kafka publish failed: topic={} slug={} error={}",
-                                urlClickedTopic, slug, ex.getMessage());
-                        failedEventService.save(urlClickedTopic, slug, event, ex.getMessage());
-                    } else {
-                        log.debug("Published url.clicked: topic={} slug={} urlId={} partition={}",
-                                urlClickedTopic, slug, urlId,
-                                result.getRecordMetadata().partition());
-                    }
-                });
-    }
-
-
-    private String sha256(String input) {
-
         try {
+            kafkaTemplate.send(urlCreatedTopic, slug, event)
+                    .whenComplete((result, ex) -> {
+                        if (ex != null) {
+                            log.error("Kafka publish failed: topic={} slug={} error={}",
+                                    urlCreatedTopic, slug, ex.getMessage());
+                            failedEventService.save(urlCreatedTopic, slug, event, ex.getMessage());
+                        } else {
+                            log.debug("Published url.created: topic={} slug={} urlId={} partition={}",
+                                    urlCreatedTopic, slug, urlId,
+                                    result.getRecordMetadata().partition());
+                        }
+                    });
+        } catch (Exception ex) {
 
-            var digest = java.security.MessageDigest.getInstance("SHA-256");
+            log.error("Kafka send failed immediately", ex);
 
-            byte[] hash = digest.digest(input.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-
-            var hex = new StringBuilder();
-
-            for (byte b : hash) hex.append(String.format("%02x", b));
-
-            return hex.toString();
-
-        } catch (Exception _) {
-            return "unknown";
+            failedEventService.save(
+                    urlCreatedTopic,
+                    slug,
+                    event,
+                    ex.getMessage()
+            );
         }
     }
-}
+
+        private void publishDeletedEvent (Url url){
+
+            String slug = url.getSlug();
+            Long urlId = url.getId();
+
+            UrlDeletedEvent event = new UrlDeletedEvent(urlId, slug, url.getUserId(), Instant.now());
+
+            kafkaTemplate.send(urlDeletedTopic, slug, event)
+                    .whenComplete((result, ex) -> {
+                        if (ex != null) {
+                            log.error("Kafka publish failed: topic={} slug={} error={}",
+                                    urlDeletedTopic, slug, ex.getMessage());
+                            failedEventService.save(urlDeletedTopic, slug, event, ex.getMessage());
+                        } else {
+                            log.debug("Published url.deleted: topic={} slug={} urlId={} partition={}",
+                                    urlDeletedTopic, slug, urlId,
+                                    result.getRecordMetadata().partition());
+                        }
+                    });
+        }
+
+        private void publishClickEvent (Long urlId, String slug, HttpServletRequest request){
+
+            String ipHash = sha256(request.getRemoteAddr());
+
+            UrlClickedEvent event = new UrlClickedEvent(
+                    urlId, slug,
+                    request.getHeader("User-Agent"),
+                    ipHash,
+                    request.getHeader("Referer"),
+                    Instant.now()
+            );
+
+            kafkaTemplate.send(urlClickedTopic, slug, event)
+                    .whenComplete((result, ex) -> {
+                        if (ex != null) {
+                            log.error("Kafka publish failed: topic={} slug={} error={}",
+                                    urlClickedTopic, slug, ex.getMessage());
+                            failedEventService.save(urlClickedTopic, slug, event, ex.getMessage());
+                        } else {
+                            log.debug("Published url.clicked: topic={} slug={} urlId={} partition={}",
+                                    urlClickedTopic, slug, urlId,
+                                    result.getRecordMetadata().partition());
+                        }
+                    });
+        }
+
+
+        private String sha256 (String input){
+
+            try {
+
+                var digest = java.security.MessageDigest.getInstance("SHA-256");
+
+                byte[] hash = digest.digest(input.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+                var hex = new StringBuilder();
+
+                for (byte b : hash) hex.append(String.format("%02x", b));
+
+                return hex.toString();
+
+            } catch (Exception _) {
+                return "unknown";
+            }
+        }
+    }
 
