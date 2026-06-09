@@ -6,5 +6,6 @@
     http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.20.xsd">
 
     <include file="classpath:db/changelog/migrations/V001__create_url_tables.sql"/>
+    <include file="classpath:db/changelog/migrations/V002__create_failed_events.sql"/>
 
 </databaseChangeLog>
