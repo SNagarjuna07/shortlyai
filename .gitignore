@@ -5,6 +5,7 @@ target/
 .kotlin
 Redis-Key-Pattern.pdf
 .env
+logs/
 
 ### IntelliJ IDEA ###
 .idea/modules.xml
