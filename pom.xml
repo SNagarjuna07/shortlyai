@@ -33,10 +33,10 @@
   <!-- ── All version numbers live here — change once, applies everywhere ── -->
   <properties>
     <java.version>25</java.version>
-    <spring-cloud.version>2025.0.0</spring-cloud.version>
-    <spring-ai.version>1.0.0</spring-ai.version>
+    <spring-cloud.version>2025.1.1</spring-cloud.version>
+    <spring-ai.version>2.0.0-M1</spring-ai.version>
     <jjwt.version>0.12.6</jjwt.version>
-    <resilience4j.version>2.3.0</resilience4j.version>
+    <resilience4j.version>2.2.0</resilience4j.version>
     <shedlock.version>6.0.1</shedlock.version>
     <liquibase.version>4.29.0</liquibase.version>
     <micrometer-tracing.version>1.4.0</micrometer-tracing.version>
@@ -49,6 +49,7 @@
     <dependencies>
 
       <!-- Spring Cloud BOM — Gateway, OpenFeign, Circuit Breaker versions -->
+      <!-- ADD this — actual BOM import, manages ALL Spring Cloud versions -->
       <dependency>
         <groupId>org.springframework.cloud</groupId>
         <artifactId>spring-cloud-dependencies</artifactId>
@@ -56,6 +57,11 @@
         <type>pom</type>
         <scope>import</scope>
       </dependency>
+
+<!--      <dependency>-->
+<!--        <groupId>org.springframework.cloud</groupId>-->
+<!--        <artifactId>spring-cloud-gateway-server-webflux</artifactId>-->
+<!--      </dependency>-->
 
       <!-- Spring AI BOM — all AI starter versions -->
       <dependency>
@@ -83,12 +89,12 @@
         <version>${jjwt.version}</version>
       </dependency>
 
-      <!-- Resilience4j — circuit breaker, retry, bulkhead -->
-      <dependency>
-        <groupId>io.github.resilience4j</groupId>
-        <artifactId>resilience4j-spring-boot3</artifactId>
-        <version>${resilience4j.version}</version>
-      </dependency>
+<!--      &lt;!&ndash; Resilience4j — circuit breaker, retry, bulkhead &ndash;&gt;-->
+<!--      <dependency>-->
+<!--        <groupId>io.github.resilience4j</groupId>-->
+<!--        <artifactId>resilience4j-spring-boot3</artifactId>-->
+<!--        <version>${resilience4j.version}</version>-->
+<!--      </dependency>-->
 
       <!-- ShedLock — prevents scheduled jobs running on multiple instances -->
       <dependency>
