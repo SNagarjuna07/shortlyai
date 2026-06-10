@@ -5,40 +5,59 @@ spring:
   application:
     name: api-gateway  # service name shown in logs + actuator
 
+  threads:
+    virtual:
+      enabled: true
+
   # Redis — rate limiting storage
   data:
     redis:
       host: ${REDIS_HOST:localhost}   # env var with fallback for local dev
       port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD:}    # empty locally, set in prod
+      password: ${REDIS_PASSWORD:redis123}
 
   # Gateway routes — each service gets its own route
   cloud:
     gateway:
-      routes:
-        # Auth service — login, register, OAuth2 (no JWT check needed)
-        - id: auth-service
-          uri: http://localhost:8081
-          predicates:
-            - Path=/api/auth/**       # any request starting with /api/auth/
+      server:
+        webflux:
+          default-filters:
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenish-rate: 5
+                redis-rate-limiter.burst-capacity: 2
+                redis-rate-limiter.requested-tokens: 1
+                key-resolver: "#{@userKeyResolver}"
 
-        # URL service — shorten, redirect, delete
-        - id: url-service
-          uri: http://localhost:8082
-          predicates:
-            - Path=/api/urls/**
+          routes:
+            - id: auth-service
+              uri: http://localhost:8081
+              predicates:
+                - Path=/api/v1/auth/**, /oauth2/**, /login/oauth2/**
 
-        # Analytics service — click stats, top URLs
-        - id: analytics-service
-          uri: http://localhost:8083
-          predicates:
-            - Path=/api/analytics/**
+            - id: url-service
+              uri: http://localhost:8082
+              predicates:
+                - Path=/api/v1/urls/**
 
-        # AI service — classification, slug, safety
-        - id: ai-service
-          uri: http://localhost:8084
-          predicates:
-            - Path=/api/ai/**
+            - id: analytics-service
+              uri: http://localhost:8083
+              predicates:
+                - Path=/api/v1/analytics/**
+
+            - id: ai-service
+              uri: http://localhost:8084
+              predicates:
+                - Path=/api/v1/ai/**
+
+            - id: url-redirect
+              uri: http://localhost:8082
+              predicates:
+                - Path=/r/{slug}
+
+          httpclient:
+            connect-timeout: 2000
+            response-timeout: 5s
 
 server:
   port: 8080  # single entry point — all clients hit this port only
@@ -61,3 +80,7 @@ logging:
   level:
     root: info
     com.shortlyai: DEBUG  # verbose for our code only
+
+  structured:
+    format:
+      console: logstash
