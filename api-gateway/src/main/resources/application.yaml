@@ -80,7 +80,3 @@ logging:
   level:
     root: info
     com.shortlyai: DEBUG  # verbose for our code only
-
-  structured:
-    format:
-      console: logstash

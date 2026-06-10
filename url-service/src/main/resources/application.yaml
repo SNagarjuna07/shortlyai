@@ -83,7 +83,3 @@ logging:
   level:
     root: info
     com.shortlyai: DEBUG
-
-  structured:
-    format:
-      console: logstash

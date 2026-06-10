@@ -89,7 +89,3 @@ logging:
     root: info
     com.shortlyai: DEBUG
     org.springframework.web: DEBUG
-
-  structured:
-    format:
-      console: logstash

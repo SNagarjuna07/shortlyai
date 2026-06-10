@@ -38,6 +38,7 @@
 
         <root level="INFO">
             <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="FILE"/>
         </root>
 
         <!-- DEBUG for our own code only — not the whole framework -->

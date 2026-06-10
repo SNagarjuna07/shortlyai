@@ -76,6 +76,7 @@
 
         <root level="INFO">
             <appender-ref ref="JSON_CONSOLE"/>
+            <appender-ref ref="FILE"/>
         </root>
 
         <logger name="com.shortlyai" level="INFO"/> <!-- no DEBUG in prod -->
