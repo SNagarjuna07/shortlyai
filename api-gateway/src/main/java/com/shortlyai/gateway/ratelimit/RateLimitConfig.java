@@ -12,18 +12,7 @@ import java.net.InetSocketAddress;
 // Uses token bucket algorithm - tokens fill up at replenishRate, burst allows spikes
 @Configuration
 public class RateLimitConfig {
-
-    // RedisRateLimiter - Spring Cloud Gateway's built-in token bucket via Redis
-    // replenishRate: 5  -> 5 new tokens added per second (sustained rate)
-    // burstCapacity:  10  -> max tokens bucket can hold (spike tolerance)
-    // requestedTokens: 1  -> each request costs 1 token
-    // Effect: 5 req/sec normally, up to 10 in a burst, then throttled with 429
-    @Bean
-    public RedisRateLimiter redisRateLimiter() {
-
-        return new RedisRateLimiter(5, 10, 1);
-    }
-
+    
     // KeyResolver - determines WHICH bucket to use for a given request
     // @Primary - marks this as the default resolver when multiple exist
     // Strategy:

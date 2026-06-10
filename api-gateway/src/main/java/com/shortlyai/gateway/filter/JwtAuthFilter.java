@@ -4,7 +4,6 @@ import com.shortlyai.gateway.dto.ErrorResponse;
 import com.shortlyai.gateway.security.JwtUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.json.JsonParseException;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.Ordered;
@@ -18,7 +17,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 import tools.jackson.databind.json.JsonMapper;
-
 import java.time.Instant;
 import java.util.Set;
 
@@ -134,7 +132,7 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
         // Short URL redirect - single path segment e.g. /abc123
         // indexOf('/', 1) finds slash AFTER position 0
         // If no second slash exists -> exactly one segment -> it's a slug
-        if (!path.startsWith("/api") && path.indexOf('/', 1) == -1) return true;
+        if (path.startsWith("/r/")) return true;
 
         return false;
     }
@@ -167,7 +165,7 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
 
             return response.writeWith(Mono.just(buffer));
 
-        } catch (JsonParseException e) {
+        } catch (Exception e) {
 
             log.error("Failed to serialize error response", e);
 
