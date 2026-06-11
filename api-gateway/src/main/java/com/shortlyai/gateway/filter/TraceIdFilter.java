@@ -1,6 +1,7 @@
 package com.shortlyai.gateway.filter;
 
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.Ordered;
@@ -8,7 +9,6 @@ import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
-
 import java.util.UUID;
 
 // GlobalFilter - runs on EVERY route, no per-route config needed
@@ -51,6 +51,11 @@ public class TraceIdFilter implements GlobalFilter, Ordered {
         // Mutate response - adds X-Trace-Id header going BACK to client
         // Client can use this to report bugs: "my trace ID was abc-123"
         exchange.getResponse().getHeaders().add(TRACE_ID_HEADER, finalTraceId);
+
+        // Put traceId into MDC so Logback pattern %mdc{traceId} resolves it
+        // doFinally removes it - runs on completion, error, OR cancel (all signal types)
+        // Without remove: MDC leaks to next request on same thread
+        MDC.put("traceId", finalTraceId);
 
         log.debug("Trace ID assigned: {} for path: {}", finalTraceId,
                 exchange.getRequest().getURI().getPath());

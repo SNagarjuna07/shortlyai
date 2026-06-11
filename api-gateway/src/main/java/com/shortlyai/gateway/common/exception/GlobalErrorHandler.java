@@ -17,11 +17,11 @@ import tools.jackson.databind.json.JsonMapper;
 import java.time.Instant;
 
 // WebExceptionHandler - reactive equivalent of @ControllerAdvice
-// @Order(-1) - runs before Spring Boot's default error handler
+// @Order(-2) - runs before Spring Boot's default error handler
 // Catches: routing errors (no route found), downstream service errors, unexpected exceptions
 @Slf4j
 @Component
-@Order(-1)
+@Order(-2)
 @RequiredArgsConstructor
 public class GlobalErrorHandler implements WebExceptionHandler {
 

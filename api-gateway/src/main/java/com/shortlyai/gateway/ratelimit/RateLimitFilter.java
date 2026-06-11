@@ -1,8 +1,8 @@
 package com.shortlyai.gateway.ratelimit;
 
 import com.shortlyai.gateway.dto.ErrorResponse;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.cloud.gateway.filter.ratelimit.KeyResolver;
@@ -16,7 +16,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 import tools.jackson.databind.json.JsonMapper;
-
 import java.time.Instant;
 
 // Custom GlobalFilter — replaces RequestRateLimiter default-filter in yaml
@@ -24,12 +23,27 @@ import java.time.Instant;
 // Order 1: runs AFTER JwtAuthFilter (-1), so X-User-Id is already injected
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class RateLimitFilter implements GlobalFilter, Ordered {
 
     private final RedisRateLimiter redisRateLimiter; // bean from RateLimitConfig
+
     private final KeyResolver userKeyResolver;        // @Primary bean from RateLimitConfig
+
     private final JsonMapper jsonMapper;
+
+    private final String apiPrefix;
+
+    public RateLimitFilter(
+            RedisRateLimiter redisRateLimiter,
+            KeyResolver userKeyResolver,
+            JsonMapper jsonMapper,
+            @Value("${api.prefix}") String apiPrefix
+    ) {
+        this.redisRateLimiter = redisRateLimiter;
+        this.userKeyResolver = userKeyResolver;
+        this.jsonMapper = jsonMapper;
+        this.apiPrefix = apiPrefix;
+    }
 
     @Override
     public int getOrder() {
@@ -37,7 +51,10 @@ public class RateLimitFilter implements GlobalFilter, Ordered {
     }
 
     @Override
-    public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
+    public Mono<Void> filter(
+            ServerWebExchange exchange,
+            GatewayFilterChain chain
+    ) {
 
         String path = exchange.getRequest().getURI().getPath();
         String routeId = resolveRouteId(path); // which service bucket config to use
@@ -48,7 +65,7 @@ public class RateLimitFilter implements GlobalFilter, Ordered {
                     // CRITICAL: prefix routeId to userKey
                     // Without this: auth and url share same bucket for same user
                     // With this: "auth:user:uuid" ≠ "url:user:uuid" → separate buckets
-                    String bucketKey = userKey;
+                    String bucketKey = routeId + ":" + userKey;  // "auth:user:uuid", "url:user:uuid" — now actually separate
 
                     log.debug("Rate check for route: {}, bucket: {}", routeId, bucketKey);
 
@@ -59,14 +76,22 @@ public class RateLimitFilter implements GlobalFilter, Ordered {
                 })
                 .flatMap(response -> {
 
+                    // Forward all rate limit metadata headers to client response
+                    // RedisRateLimiter populates these automatically — we just attach them
+                    response.getHeaders().forEach((headerName, headerValue) ->
+                            exchange.getResponse().getHeaders().set(headerName, headerValue)
+                    );
+
                     if (response.isAllowed()) {
                         return chain.filter(exchange);
                     }
 
                     log.warn("Rate limit hit for route: {}, path: {}", routeId, path);
 
-                    return writeError(exchange, HttpStatus.TOO_MANY_REQUESTS,
-                            "Rate limit exceeded for " + routeId);
+                    return writeError(exchange,
+                            HttpStatus.TOO_MANY_REQUESTS,
+                            "Rate limit exceeded for " + routeId
+                    );
                 })
                 .onErrorResume(ex -> {
 
@@ -81,10 +106,10 @@ public class RateLimitFilter implements GlobalFilter, Ordered {
     // routeId must match keys in rate-limit.routes yaml (and in the bean's config map)
     private String resolveRouteId(String path) {
 
-        if (path.startsWith("/api/v1/auth"))      return "auth";       // strict - brute force target
-        if (path.startsWith("/api/v1/urls"))       return "url";        // moderate
-        if (path.startsWith("/api/v1/analytics")) return "analytics";  // lenient - read-heavy
-        if (path.startsWith("/api/v1/ai"))         return "ai";         // very strict - expensive ops
+        if (path.startsWith(apiPrefix + "/auth"))      return "auth";       // strict - brute force target
+        if (path.startsWith(apiPrefix + "/urls"))       return "url";        // moderate
+        if (path.startsWith(apiPrefix + "/analytics")) return "analytics";  // lenient - read-heavy
+        if (path.startsWith(apiPrefix + "/ai"))         return "ai";         // very strict - expensive ops
         if (path.startsWith("/r/"))                return "url";        // redirect = same bucket as url-service
 
         return "default"; // catch-all - uses constructor fallback config

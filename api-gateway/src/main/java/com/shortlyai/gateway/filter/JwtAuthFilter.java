@@ -2,8 +2,8 @@ package com.shortlyai.gateway.filter;
 
 import com.shortlyai.gateway.dto.ErrorResponse;
 import com.shortlyai.gateway.security.JwtUtil;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.Ordered;
@@ -18,13 +18,11 @@ import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 import tools.jackson.databind.json.JsonMapper;
 import java.time.Instant;
-import java.util.Set;
 
 // GlobalFilter — runs on every request, before routing to any service
 // Order -1 — runs after TraceIdFilter (-2), before all other filters
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class JwtAuthFilter implements GlobalFilter, Ordered {
 
     private final JwtUtil jwtUtil;
@@ -32,13 +30,17 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
     // JsonMapper - serializes ErrorResponse to JSON bytes for 401 responses
     private final JsonMapper jsonMapper;
 
-    // Paths that bypass JWT check entirely (open endpoints)
-    private static final Set<String> PUBLIC_PATHS = Set.of(
-            "/api/v1/auth/login",
-            "/api/v1/auth/register",
-            "/api/v1/auth/refresh",
-            "/api/v1/auth/logout"     // auth-service validates its own token for blacklisting
-    );
+    private final String apiPrefix;
+
+    public JwtAuthFilter(
+            JwtUtil jwtUtil,
+            JsonMapper jsonMapper,
+            @Value("${api.prefix}") String apiPrefix
+    ) {
+        this.jwtUtil = jwtUtil;
+        this.jsonMapper = jsonMapper;
+        this.apiPrefix = apiPrefix;
+    }
 
     @Override
     public int getOrder() {
@@ -106,35 +108,27 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
         // But we don't want each service to re-parse and re-validate the JWT
         // Gateway validates ONCE, downstream services trust X-User-Id header
         ServerHttpRequest mutatedRequest = exchange.getRequest().mutate()
-                .header("X-User-Id", userId)  // e.g. "550e8400-e29b-41d4-a716-446655440000"
-                .header("X-User-Role", role)     // e.g. "ROLE_PRO"
+                .header("X-User-Id", userId)      // e.g. "550e8400-e29b-41d4-a716-446655440000"
+                .header("X-User-Role", role)      // e.g. "ROLE_PRO"
                 .build();
 
         log.debug("JWT valid, userId: {}, role: {}, forwarding to: {}", userId, role, path);
 
-        // Pass mutated exchange - downstream services see the injected headers
+         // Pass mutated exchange - downstream services see the injected headers
         return chain.filter(exchange.mutate().request(mutatedRequest).build());
     }
 
     // Decides if a path requires JWT or not
     private boolean isPublicPath(String path) {
 
-        // Exact match on known public endpoints
-        if (PUBLIC_PATHS.contains(path)) return true;
-
-        // /api/v1/auth/verify has query param e.g. /api/v1/auth/verify?token=abc
-        // startsWith handles this without stripping query string
-        if (path.startsWith("/api/v1/auth/verify")) return true;
+        // All auth endpoints are public
+        if (path.startsWith(apiPrefix + "/auth/")) return true;
 
         // OAuth2 callback - Spring Security handles these internally in auth-service
         if (path.startsWith("/oauth2/") || path.startsWith("/login/oauth2/")) return true;
 
-        // Short URL redirect - single path segment e.g. /abc123
-        // indexOf('/', 1) finds slash AFTER position 0
-        // If no second slash exists -> exactly one segment -> it's a slug
-        if (path.startsWith("/r/")) return true;
-
-        return false;
+        // Short URL redirect endpoint
+        return path.startsWith("/r/");
     }
 
     // Writes a JSON error response directly - request never reaches downstream service
