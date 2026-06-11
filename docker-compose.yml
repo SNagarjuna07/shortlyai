@@ -165,6 +165,26 @@ services:
       KAFKA_CLUSTERS_0_NAME: local
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092    # uses INTERNAL listener — kafka-ui is inside Docker
 
+  # eureka-server service
+  eureka-server:
+    build:
+      context: .
+      dockerfile: eureka-server/DockerFile
+    ports:
+      - "8761:8761"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8761/actuator/health"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 40s   # Eureka takes ~30s to fully start
+
+  # Every other service — add these env vars + depends_on
+    environment:
+    - EUREKA_URL=http://eureka-server:8761/eureka/   # Docker DNS resolves eureka-server
+
+
+
 # ════════════════════════════════════════════════════════════════════
 # NAMED VOLUMES
 # Docker manages these — data lives outside container lifecycle.
