@@ -28,7 +28,14 @@ public class CorsConfig {
 
         // X-Trace-Id — let clients read the trace ID from responses (useful for debugging)
         config.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Trace-Id"));
-        config.setExposedHeaders(List.of("X-Trace-Id")); // expose to browser JS
+
+        // headers
+        config.setExposedHeaders(List.of(
+                "X-Trace-Id",
+                "X-RateLimit-Remaining",        // client knows how many left
+                "X-RateLimit-Burst-Capacity",   // client knows max burst
+                "Retry-After"                   // already set on 429
+        )); // expose to browser JS
 
         config.setAllowCredentials(true); // allow Authorization header in CORS requests
         config.setMaxAge(3600L);          // browsers cache preflight for 1 hour

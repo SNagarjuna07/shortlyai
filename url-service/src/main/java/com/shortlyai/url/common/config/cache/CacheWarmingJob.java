@@ -3,7 +3,6 @@ package com.shortlyai.url.common.config.cache;
 import com.shortlyai.url.shortening.Url;
 import com.shortlyai.url.shortening.UrlRepository;
 import lombok.extern.slf4j.Slf4j;
-import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;

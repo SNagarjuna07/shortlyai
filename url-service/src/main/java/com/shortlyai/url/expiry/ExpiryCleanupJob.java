@@ -1,6 +1,5 @@
 package com.shortlyai.url.expiry;
 
-import com.shortlyai.url.shortening.Url;
 import com.shortlyai.url.shortening.UrlRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
