@@ -23,6 +23,7 @@
 
   <!-- ── 5 child modules — Maven builds them in this order ── -->
   <modules>
+    <module>eureka-server</module>
     <module>api-gateway</module>
     <module>auth-service</module>
     <module>url-service</module>
