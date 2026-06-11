@@ -90,6 +90,12 @@
             <version>9.0</version>
         </dependency>
 
+        <!-- Eureka client — registers service on startup, sends heartbeat every 10s -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
+        </dependency>
+
         <!-- Validation — @Valid on shorten request record -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

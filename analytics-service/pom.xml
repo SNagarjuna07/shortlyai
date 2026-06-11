@@ -28,6 +28,12 @@
             <artifactId>spring-boot-starter-kafka</artifactId>
         </dependency>
 
+        <!-- Eureka client — registers service on startup, sends heartbeat every 10s -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
+        </dependency>
+
         <!-- Postgres — persist aggregated click data -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

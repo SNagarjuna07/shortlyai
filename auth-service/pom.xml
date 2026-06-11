@@ -114,6 +114,12 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-mail</artifactId>
         </dependency>
+
+        <!-- Eureka client — registers service on startup, sends heartbeat every 10s -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
+        </dependency>
     </dependencies>
 
     <build>
