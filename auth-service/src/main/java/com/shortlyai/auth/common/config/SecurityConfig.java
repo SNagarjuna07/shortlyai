@@ -65,34 +65,10 @@ public class SecurityConfig {
                 .addFilterBefore(jwtAuthFilter,
                         UsernamePasswordAuthenticationFilter.class)
 
-                // Add this block
+                // OAuth config
                 .oauth2Login(oauth2 -> oauth2
                         .successHandler(oAuth2SuccessHandler)
-                )
-
-                // CORS — allows frontend to call this API from a different origin
-                // Without this, browser blocks all cross-origin requests
-                .cors(cors -> cors.configurationSource(request -> {
-                    CorsConfiguration config = new CorsConfiguration();
-
-                    // Allowed origins — localhost for dev, real domain for prod
-                    // Never use * in prod — too permissive
-                    config.setAllowedOrigins(List.of(
-                            "http://localhost:3000",   // React dev server
-                            "http://localhost:5173"    // Vite dev server
-                    ));
-
-                    // Allowed HTTP methods
-                    config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-
-                    // Allowed headers — Authorization carries JWT, Content-Type for JSON body
-                    config.setAllowedHeaders(List.of("Authorization", "Content-Type"));
-
-                    // Allow cookies/auth headers in cross-origin requests
-                    config.setAllowCredentials(true);
-
-                    return config;
-                }));
+                );
 
         return http.build();
 
