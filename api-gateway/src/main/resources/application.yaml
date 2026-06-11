@@ -16,48 +16,50 @@ spring:
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:redis123}
 
-  # Gateway routes — each service gets its own route
   cloud:
     gateway:
       server:
         webflux:
-          default-filters:
-            - name: RequestRateLimiter
-              args:
-                redis-rate-limiter.replenish-rate: 5
-                redis-rate-limiter.burst-capacity: 2
-                redis-rate-limiter.requested-tokens: 1
-                key-resolver: "#{@userKeyResolver}"
-
           routes:
             - id: auth-service
-              uri: http://localhost:8081
+              uri: lb://auth-service        # lb:// = load balanced via Eureka
               predicates:
                 - Path=/api/v1/auth/**, /oauth2/**, /login/oauth2/**
 
             - id: url-service
-              uri: http://localhost:8082
+              uri: lb://url-service
               predicates:
                 - Path=/api/v1/urls/**
 
             - id: analytics-service
-              uri: http://localhost:8083
+              uri: lb://analytics-service
               predicates:
                 - Path=/api/v1/analytics/**
 
             - id: ai-service
-              uri: http://localhost:8084
+              uri: lb://ai-service
               predicates:
                 - Path=/api/v1/ai/**
 
             - id: url-redirect
-              uri: http://localhost:8082
+              uri: lb://url-service         # redirect uses same service as url
               predicates:
                 - Path=/r/{slug}
 
           httpclient:
             connect-timeout: 2000
             response-timeout: 5s
+
+# Gateway also registers with Eureka — not strictly needed but consistent
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+    registry-fetch-interval-seconds: 10
+  instance:
+    prefer-ip-address: true
+    lease-renewal-interval-in-seconds: 10
+    lease-expiration-duration-in-seconds: 30
 
 server:
   port: 8080  # single entry point — all clients hit this port only
@@ -80,3 +82,30 @@ logging:
   level:
     root: info
     com.shortlyai: DEBUG  # verbose for our code only
+
+# Per-service rate limits
+# auth: strict - /login is brute-force target
+# ai:   very strict - each call hits LLM, expensive
+# analytics: lenient - read-only stats endpoints
+rate-limit:
+  routes:
+    auth:
+      replenish-rate: 3
+      burst-capacity: 5
+      requested-tokens: 1
+    url:
+      replenish-rate: 10
+      burst-capacity: 20
+      requested-tokens: 1
+    analytics:
+      replenish-rate: 20
+      burst-capacity: 40
+      requested-tokens: 1
+    ai:
+      replenish-rate: 2
+      burst-capacity: 3
+      requested-tokens: 1
+    default:
+      replenish-rate: 5
+      burst-capacity: 10
+      requested-tokens: 1
