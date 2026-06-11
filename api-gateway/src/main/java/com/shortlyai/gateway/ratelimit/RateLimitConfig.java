@@ -6,38 +6,58 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 import reactor.core.publisher.Mono;
+
 import java.net.InetSocketAddress;
 
-// Configures Spring Cloud Gateway's built-in Redis rate limiter
-// Uses token bucket algorithm - tokens fill up at replenishRate, burst allows spikes
 @Configuration
 public class RateLimitConfig {
-    
-    // KeyResolver - determines WHICH bucket to use for a given request
-    // @Primary - marks this as the default resolver when multiple exist
-    // Strategy:
-    //   Authenticated user -> bucket per userId (fair per-user limiting)
-    //   Anonymous request -> bucket per IP (handles unauthenticated endpoints)
+
+    // RedisRateLimiter constructed from the "default" route config in yaml
+    // Per-service configs loaded into the bean's internal map
+    // isAllowed(routeId, key) looks up routeId → picks correct rate config
+    @Bean
+    public RedisRateLimiter redisRateLimiter(RouteRateLimitProperties props) {
+
+        // "default" entry in yaml drives the constructor fallback
+        RouteRateLimitProperties.RouteConfig def =
+                props.routes().getOrDefault("default",
+                        new RouteRateLimitProperties.RouteConfig(5, 10, 1));
+
+        RedisRateLimiter limiter = new RedisRateLimiter(
+                def.replenishRate(),
+                def.burstCapacity(),
+                def.requestedTokens()
+        );
+
+        // Register per-service configs into the bean's internal ConcurrentHashMap
+        // isAllowed() looks up this map by routeId to pick replenishRate/burstCapacity
+        props.routes().forEach((routeId, cfg) -> {
+            if (!routeId.equals("default")) {
+                limiter.getConfig().put(routeId, new RedisRateLimiter.Config()
+                        .setReplenishRate(cfg.replenishRate())
+                        .setBurstCapacity(cfg.burstCapacity())
+                        .setRequestedTokens(cfg.requestedTokens()));
+            }
+        });
+
+        return limiter;
+    }
+
+    // KeyResolver picks bucket key: authenticated → userId, anonymous → IP
+    // RateLimitFilter PREPENDS routeId to this key to avoid cross-service bucket bleed
+    // e.g. "auth:user:uuid" vs "url:user:uuid" — completely separate buckets
     @Bean
     @Primary
     public KeyResolver userKeyResolver() {
 
         return exchange -> {
 
-            // X-User-Id injected by JwtAuthFilter - present on authenticated requests
-            String userId = exchange
-                    .getRequest()
-                    .getHeaders()
-                    .getFirst("X-User-Id");
+            String userId = exchange.getRequest().getHeaders().getFirst("X-User-Id");
 
             if (userId != null && !userId.isBlank()) {
-
-                // "user:" prefix - avoids key collision with IP-based keys in Redis
                 return Mono.just("user:" + userId);
             }
 
-            // Anonymous request - rate limit by IP address
-            // Handles /auth/login brute force, slug redirects, etc.
             InetSocketAddress remoteAddress = exchange.getRequest().getRemoteAddress();
 
             String ip = (remoteAddress != null)
