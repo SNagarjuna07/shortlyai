@@ -5,21 +5,38 @@ spring:
   application:
     name: ai-service
 
-  # Spring AI — OpenAI key + model config
   ai:
     openai:
-      api-key: ${OPENAI_API_KEY:}
+      api-key: ${GROQ_API_KEY:}                  # key from .env, Groq not OpenAI
+      base-url: ${GROQ_BASE_URL}
       chat:
-        options:
-          model: gpt-4o-mini          # cheap + fast — sufficient for classification
-          temperature: 0.3            # low = deterministic, good for classification
-          max-tokens: 500             # classification responses are short
+        model: ${GROQ_MODEL}
+        temperature: ${GROQ_TEMPERATURE}                        # low temp = consistent classification output
+        max-tokens: ${GROQ_MAX_TOKENS}                         # short responses, keep cheap/fast
 
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JacksonJsonSerializer
+      properties:
+        max.block.ms: 3000          # fail fast if Kafka unreachable (default 60s blocks HTTP)
+        retries: 3
+        retry.backoff.ms: 1000
+
+    consumer:
+      group-id: ai-service
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JacksonJsonDeserializer
+      properties:
+        reconnect.backoff.ms: 1000
+        reconnect.backoff.max.ms: 10000
+
+  threads:
+    virtual:
+      enabled: true
 
 server:
   port: 8084
@@ -34,3 +51,9 @@ logging:
   level:
     root: info
     com.shortlyai: DEBUG
+
+services:
+  url-service:
+    base-url: ${URL_SERVICE_BASE_URL:http://localhost:8082}
+  analytics-service:
+    base-url: ${ANALYTICS_SERVICE_BASE_URL:http://localhost:8083}
