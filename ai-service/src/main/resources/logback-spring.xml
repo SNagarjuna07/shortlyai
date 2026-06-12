@@ -24,9 +24,9 @@
         </appender>
 
         <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-            <file>logs/url-service.log</file>
+            <file>logs/ai-service.log</file>
             <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
-                <fileNamePattern>logs/url-service.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+                <fileNamePattern>logs/ai-service.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
                 <maxFileSize>10MB</maxFileSize>   <!-- roll when file hits 10MB -->
                 <maxHistory>7</maxHistory>        <!-- keep 7 days of logs -->
                 <totalSizeCap>500MB</totalSizeCap><!-- delete oldest if total exceeds 500MB -->
@@ -55,7 +55,7 @@
         <appender name="JSON_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
             <encoder class="net.logstash.logback.encoder.LogstashEncoder">
                 <!-- Add service name field to every JSON log line -->
-                <customFields>{"service":"url-service"}</customFields>
+                <customFields>{"service":"ai-service"}</customFields>
 
                 <!-- Include MDC fields (traceId etc.) as top-level JSON fields -->
                 <includeMdcKeyName>traceId</includeMdcKeyName>
@@ -63,9 +63,9 @@
         </appender>
 
         <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-            <file>logs/url-service.log</file>
+            <file>logs/ai-service.log</file>
             <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
-                <fileNamePattern>logs/url-service.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+                <fileNamePattern>logs/ai-service.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
                 <maxFileSize>10MB</maxFileSize>   <!-- roll when file hits 10MB -->
                 <maxHistory>7</maxHistory>        <!-- keep 7 days of logs -->
                 <totalSizeCap>500MB</totalSizeCap><!-- delete oldest if total exceeds 500MB -->
