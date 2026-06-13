@@ -10,9 +10,10 @@ spring:
       api-key: ${GROQ_API_KEY:}                  # key from .env, Groq not OpenAI
       base-url: ${GROQ_BASE_URL}
       chat:
-        model: ${GROQ_MODEL}
-        temperature: ${GROQ_TEMPERATURE}                        # low temp = consistent classification output
-        max-tokens: ${GROQ_MAX_TOKENS}                         # short responses, keep cheap/fast
+        options:
+          model: ${GROQ_MODEL}
+          temperature: ${GROQ_TEMPERATURE}                        # low temp = consistent classification output
+          max-tokens: ${GROQ_MAX_TOKENS}                         # short responses, keep cheap/fast
 
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
@@ -51,6 +52,7 @@ logging:
   level:
     root: info
     com.shortlyai: DEBUG
+    org.springframework.ai: DEBUG
 
 services:
   url-service:
