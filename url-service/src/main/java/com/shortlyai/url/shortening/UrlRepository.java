@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -62,10 +63,10 @@ public interface UrlRepository extends JpaRepository<Url, Long> {
 
     @Modifying
     @Query("""
-              UPDATE Url u 
-              SET u.isActive = false, 
-              u.updatedAt = :now WHERE 
-              u.expiresAt < :now 
+              UPDATE Url u
+              SET u.isActive = false,
+              u.updatedAt = :now WHERE
+              u.expiresAt < :now
               AND u.isActive = true
     """)
     int deactivateExpiredUrls(@Param("now") Instant now);
@@ -81,4 +82,23 @@ public interface UrlRepository extends JpaRepository<Url, Long> {
         AND u.isActive = true
         """)
     List<String> findExpiredSlugs(@Param("now") Instant now);
+
+
+    Optional<Url> findBySlugAndUserId(String slug, UUID userId);
+
+    @Modifying
+    @Query("""
+        UPDATE Url u
+        SET u.title = :title,
+            u.category = :category,
+            u.isSafe = :isSafe,
+            u.updatedAt = CURRENT_TIMESTAMP
+        WHERE u.id = :urlId
+        """)
+    void updateClassification(
+            @Param("urlId") Long urlId,
+            @Param("title") String title,
+            @Param("category") String category,
+            @Param("isSafe") boolean isSafe
+    );
 }

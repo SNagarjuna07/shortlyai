@@ -1,0 +1,53 @@
+package com.shortlyai.url.common.config;
+
+import com.shortlyai.url.events.UrlClassifiedEvent;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.common.serialization.StringDeserializer;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
+import org.springframework.kafka.core.ConsumerFactory;
+import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
+import org.springframework.kafka.support.serializer.JacksonJsonDeserializer;
+
+import java.util.HashMap;
+import java.util.Map;
+
+@Configuration
+public class KafkaConsumerConfig {
+
+    private final String bootstrapServers;
+
+    // reuses same bootstrap-servers property the producer already uses
+    public KafkaConsumerConfig(@Value("${spring.kafka.bootstrap-servers}") String bootstrapServers) {
+        this.bootstrapServers = bootstrapServers;
+    }
+
+    @Bean
+    public ConsumerFactory<String, UrlClassifiedEvent> classifiedConsumerFactory() {
+
+        Map<String, Object> props = new HashMap<>();
+        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        props.put(ConsumerConfig.GROUP_ID_CONFIG, "url-service-group"); // new consumer group, url-service's own
+        props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+
+        JacksonJsonDeserializer<UrlClassifiedEvent> deser =
+                new JacksonJsonDeserializer<>(UrlClassifiedEvent.class);
+        deser.addTrustedPackages("com.shortlyai.*");
+        deser.setUseTypeHeaders(false); // ai-service producer has add.type.headers: false
+
+        return new DefaultKafkaConsumerFactory<>(props, new StringDeserializer(), deser);
+    }
+
+    @Bean
+    public ConcurrentKafkaListenerContainerFactory<String, UrlClassifiedEvent>
+    classifiedKafkaListenerContainerFactory() {
+
+        ConcurrentKafkaListenerContainerFactory<String, UrlClassifiedEvent> factory =
+                new ConcurrentKafkaListenerContainerFactory<>();
+        factory.setConsumerFactory(classifiedConsumerFactory());
+        return factory;
+    }
+}

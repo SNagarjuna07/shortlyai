@@ -24,4 +24,10 @@ public interface ShorteningService {
 
     // Get all URLs of a user
     Page<ShortenResponse> getUserUrls(UUID userId, Pageable pageable);
+
+    // Get URL based on slug
+    ShortenResponse getUrlBySlug(String slug, UUID userId);
+
+    // Delete URL by slug
+    void deleteUrl(String slug, UUID userId);
 }

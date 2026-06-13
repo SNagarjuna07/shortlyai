@@ -15,12 +15,14 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.NoSuchElementException;
 import java.util.UUID;
 
 @Service
@@ -236,6 +238,39 @@ public class ShorteningServiceImpl implements ShorteningService {
                 .map(this::mapToResponse);
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public ShortenResponse getUrlBySlug(String slug, UUID userId) {
+
+        Url url = urlRepository
+                .findBySlugAndUserId(slug, userId)
+                .orElseThrow(() -> new UrlNotFoundException("URL not found with slug: " + slug)
+                );
+
+        return mapToResponse(url);
+    }
+
+    @Transactional
+    public void deleteUrl(String slug, UUID userId) {
+
+        // fetch - throws UrlNotFoundException if not found (GlobalExceptionHandler -> 404)
+        Url url = urlRepository.findBySlugAndUserId(slug, userId)
+                .orElseThrow(() -> new UrlNotFoundException("URL slug " + slug + " not found"));
+
+        // delete from Postgres
+        urlRepository.delete(url);
+
+        // evict Redis cache
+        String cacheKey = "url:" + slug;
+
+        stringRedisTemplate.delete(cacheKey);
+
+        // publish url.deleted event (Kafka)
+        publishDeletedEvent(url);
+
+        log.info("Deleted URL slug={} urlId={} userId={}", slug, url.getId(), userId);
+    }
+
     private ShortenResponse mapToResponse(Url u) {
 
         return new ShortenResponse(
@@ -289,71 +324,71 @@ public class ShorteningServiceImpl implements ShorteningService {
         }
     }
 
-        private void publishDeletedEvent (Url url){
+    private void publishDeletedEvent(Url url) {
 
-            String slug = url.getSlug();
-            Long urlId = url.getId();
+        String slug = url.getSlug();
+        Long urlId = url.getId();
 
-            UrlDeletedEvent event = new UrlDeletedEvent(urlId, slug, url.getUserId(), Instant.now());
+        UrlDeletedEvent event = new UrlDeletedEvent(urlId, slug, url.getUserId(), Instant.now());
 
-            kafkaTemplate.send(urlDeletedTopic, slug, event)
-                    .whenComplete((result, ex) -> {
-                        if (ex != null) {
-                            log.error("Kafka publish failed: topic={} slug={} error={}",
-                                    urlDeletedTopic, slug, ex.getMessage());
-                            failedEventService.save(urlDeletedTopic, slug, event, ex.getMessage());
-                        } else {
-                            log.debug("Published url.deleted: topic={} slug={} urlId={} partition={}",
-                                    urlDeletedTopic, slug, urlId,
-                                    result.getRecordMetadata().partition());
-                        }
-                    });
-        }
+        kafkaTemplate.send(urlDeletedTopic, slug, event)
+                .whenComplete((result, ex) -> {
+                    if (ex != null) {
+                        log.error("Kafka publish failed: topic={} slug={} error={}",
+                                urlDeletedTopic, slug, ex.getMessage());
+                        failedEventService.save(urlDeletedTopic, slug, event, ex.getMessage());
+                    } else {
+                        log.debug("Published url.deleted: topic={} slug={} urlId={} partition={}",
+                                urlDeletedTopic, slug, urlId,
+                                result.getRecordMetadata().partition());
+                    }
+                });
+    }
 
-        private void publishClickEvent (Long urlId, String slug, HttpServletRequest request){
+    private void publishClickEvent(Long urlId, String slug, HttpServletRequest request) {
 
-            String ipHash = sha256(request.getRemoteAddr());
+        String ipHash = sha256(request.getRemoteAddr());
 
-            UrlClickedEvent event = new UrlClickedEvent(
-                    urlId, slug,
-                    request.getHeader("User-Agent"),
-                    ipHash,
-                    request.getHeader("Referer"),
-                    Instant.now()
-            );
+        UrlClickedEvent event = new UrlClickedEvent(
+                urlId, slug,
+                request.getHeader("User-Agent"),
+                ipHash,
+                request.getHeader("Referer"),
+                Instant.now()
+        );
 
-            kafkaTemplate.send(urlClickedTopic, slug, event)
-                    .whenComplete((result, ex) -> {
-                        if (ex != null) {
-                            log.error("Kafka publish failed: topic={} slug={} error={}",
-                                    urlClickedTopic, slug, ex.getMessage());
-                            failedEventService.save(urlClickedTopic, slug, event, ex.getMessage());
-                        } else {
-                            log.debug("Published url.clicked: topic={} slug={} urlId={} partition={}",
-                                    urlClickedTopic, slug, urlId,
-                                    result.getRecordMetadata().partition());
-                        }
-                    });
-        }
+        kafkaTemplate.send(urlClickedTopic, slug, event)
+                .whenComplete((result, ex) -> {
+                    if (ex != null) {
+                        log.error("Kafka publish failed: topic={} slug={} error={}",
+                                urlClickedTopic, slug, ex.getMessage());
+                        failedEventService.save(urlClickedTopic, slug, event, ex.getMessage());
+                    } else {
+                        log.debug("Published url.clicked: topic={} slug={} urlId={} partition={}",
+                                urlClickedTopic, slug, urlId,
+                                result.getRecordMetadata().partition());
+                    }
+                });
+    }
 
 
-        private String sha256 (String input){
+    private String sha256(String input) {
 
-            try {
+        try {
 
-                var digest = java.security.MessageDigest.getInstance("SHA-256");
+            var digest = java.security.MessageDigest.getInstance("SHA-256");
 
-                byte[] hash = digest.digest(input.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            byte[] hash = digest.digest(input.getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
-                var hex = new StringBuilder();
+            var hex = new StringBuilder();
 
-                for (byte b : hash) hex.append(String.format("%02x", b));
+            for (byte b : hash) hex.append(String.format("%02x", b));
 
-                return hex.toString();
+            return hex.toString();
 
-            } catch (Exception _) {
-                return "unknown";
-            }
+        } catch (Exception _) {
+            return "unknown";
         }
     }
+}
 
