@@ -49,8 +49,8 @@ public class AnalyticsServiceTools {
         log.debug("getUrlStats result userId: {}, urlId: {}, totalClicks: {}",
                 userId, urlId, stats.totalClicks());
 
-        return "URL %d has %d total clicks (%d in the last hour)"
-                .formatted(stats.urlId(), stats.totalClicks(), stats.totalClicks());
+        return "URL %d has %d total clicks"
+                .formatted(stats.urlId(), stats.totalClicks());
     }
 
     private record TopUrl(Long urlId, long clickCount) {}

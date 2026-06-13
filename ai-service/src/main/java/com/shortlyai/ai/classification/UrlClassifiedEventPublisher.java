@@ -3,8 +3,6 @@ package com.shortlyai.ai.classification;
 import com.shortlyai.ai.events.dto.UrlClassifiedEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 

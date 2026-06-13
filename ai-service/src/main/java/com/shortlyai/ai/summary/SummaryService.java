@@ -31,7 +31,7 @@ public class SummaryService {
         log.info("Generating summary for urlId: {}, userId: {}", urlId, userId);
 
         // shape this record to match analytics-service's actual stats response
-        record StatsResponse(long urlId, long totalClicks, long realtimeClicks) {}
+        record StatsResponse(long urlId, long totalClicks, String message) {}
 
         StatsResponse stats = analyticsServiceClient.get()
                 .uri(apiPrefix + "/analytics/{urlId}", urlId)
@@ -44,8 +44,7 @@ public class SummaryService {
                 performance for the dashboard.
                 
                 Total clicks: %d
-                Clicks in the last hour: %d
-                """.formatted(stats.totalClicks(), stats.realtimeClicks());
+                """.formatted(stats.totalClicks());
 
         String text = chatClient
                 .prompt()
