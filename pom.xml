@@ -108,7 +108,6 @@
         <artifactId>shedlock-provider-redis-spring</artifactId>
         <version>${shedlock.version}</version>
       </dependency>
-
     </dependencies>
   </dependencyManagement>
 
