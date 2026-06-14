@@ -54,7 +54,7 @@ public class SecurityConfig {
                 // Authorization rules — evaluated top to bottom, first match wins
                 .authorizeHttpRequests(auth ->
                         auth.requestMatchers(apiPrefix + "/auth/me").authenticated()
-                        .requestMatchers(apiPrefix + "/auth/**").permitAll()
+                        .requestMatchers(apiPrefix + "/auth/**", "/actuator/**").permitAll()
                                 .anyRequest().authenticated())
 
                 // Wire in JwtAuthFilter — runs BEFORE Spring's default auth filter

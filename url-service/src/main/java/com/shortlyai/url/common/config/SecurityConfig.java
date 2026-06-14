@@ -39,7 +39,7 @@ public class SecurityConfig {
 
                         // Redirect endpoint is public — anyone can follow a short link
                         // No auth header needed for GET /api/v1/r/{slug}
-                        .requestMatchers(HttpMethod.GET, "/api/v1/r/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/r/**", "/actuator/**").permitAll()
 
                         // Actuator health check — needed by Docker health checks and k8s probes
                         .requestMatchers("/actuator/health").permitAll()
