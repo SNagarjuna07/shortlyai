@@ -183,7 +183,49 @@ services:
     environment:
     - EUREKA_URL=http://eureka-server:8761/eureka/   # Docker DNS resolves eureka-server
 
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # needed on Linux; harmless on Windows/Mac
+    restart: unless-stopped
 
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - grafana-data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin   # change later, fine for local
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:latest
+    container_name: loki
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    restart: unless-stopped
+
+  promtail:
+      image: grafana/promtail:latest
+      container_name: promtail
+      volumes:
+        - ./promtail-config.yml:/etc/promtail/config.yml
+        - D:/Coding/SpringBoot/shortlyai:/app:ro
+      command: -config.file=/etc/promtail/config.yml
+      depends_on:
+        - loki
+      restart: unless-stopped
 
 # ════════════════════════════════════════════════════════════════════
 # NAMED VOLUMES
@@ -194,3 +236,4 @@ services:
 volumes:
   postgres-data:    # Postgres table data — all 4 databases
   redis-data:       # Redis keys — cache, tokens, counters, Bloom filter
+  grafana-data:
