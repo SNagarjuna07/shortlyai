@@ -12,12 +12,12 @@ COPY ai-service/pom.xml ai-service/
 COPY .mvn .mvn
 COPY mvnw .
 
-COPY eureka-server/src eureka-server/src
-RUN ./mvnw -pl eureka-server -am package -DskipTests
+COPY ai-service/src ai-service/src
+RUN ./mvnw -pl ai-service -am package -DskipTests
 
 FROM eclipse-temurin:25-jre AS runtime
 WORKDIR /app
-COPY --from=build /workspace/eureka-server/target/eureka-server-1.0.0-SNAPSHOT.jar app.jar
+COPY --from=build /workspace/ai-service/target/*.jar app.jar
 
-EXPOSE 8761
+EXPOSE 8084
 ENTRYPOINT ["java", "-jar", "app.jar"]

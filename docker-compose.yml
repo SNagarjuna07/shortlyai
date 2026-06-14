@@ -1,59 +1,37 @@
 # docker-compose.yml — project root
-# PURPOSE: spins up ALL infrastructure locally.
-# Java services (5 microservices) run in IntelliJ — NOT here.
-# Run: docker compose up -d
-# Stop: docker compose down
-# Wipe everything: docker compose down -v  (WARNING: deletes all data)
-
 version: '3.8'
 
 services:
 
   # ════════════════════════════════════════════════════════════════════
-  # POSTGRES 16
-  # Hosts 4 separate databases — one per service that needs persistence.
-  # auth-service    → shortlyai_auth
-  # url-service     → shortlyai_urls
-  # analytics-service → shortlyai_analytics
-  # ai-service      → shortlyai_ai  (future use)
+  # POSTGRES 16 — unchanged
   # ════════════════════════════════════════════════════════════════════
   postgres:
     image: postgres:16
     container_name: shortlyai-postgres
     environment:
-      POSTGRES_USER: postgres         # superuser — used by all services locally
-      POSTGRES_PASSWORD: postgres     # matches DB_PASSWORD default in all application.yaml files
-      PGTZ: Asia/Kolkata              # server timezone — timestamps stored in IST locally
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      PGTZ: Asia/Kolkata
     ports:
-      - "5432:5432"                   # host:container — connect via localhost:5432 from IntelliJ
+      - "5432:5432"
     volumes:
-      - postgres-data:/var/lib/postgresql/data                        # named volume — data survives container restart
-      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql         # runs ONCE on first ever start — creates all 4 DBs
+      - postgres-data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]   # checks if Postgres is accepting connections
-      interval: 10s                                    # check every 10 seconds
-      timeout: 5s                                      # fail check if no response in 5s
-      retries: 5                                       # mark unhealthy after 5 consecutive failures
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # ════════════════════════════════════════════════════════════════════
-  # REDIS STACK
-  # Using redis/redis-stack (NOT plain redis) because analytics-service
-  # needs RedisBloom module for Bloom filter (BF.ADD / BF.EXISTS commands).
-  # Plain redis image does NOT have RedisBloom — would get UNKNOWN COMMAND error.
-  #
-  # Redis use cases in ShortlyAI:
-  # 1. URL cache          — url-service caches slug→longUrl (cache-aside)
-  # 2. Rate limiting      — api-gateway token bucket via Lua script
-  # 3. Refresh tokens     — auth-service stores refresh token metadata
-  # 4. Bloom filter       — analytics-service deduplicates clicks
-  # 5. Real-time counters — analytics-service click:realtime:{urlId}
-  # 6. ShedLock locks     — all services use Redis for distributed job locks
+  # REDIS STACK — unchanged
   # ════════════════════════════════════════════════════════════════════
   redis:
     image: redis/redis-stack:latest
     container_name: shortlyai-redis
     environment:
-      REDIS_ARGS: "--requirepass redis123"   # ← password via env, not command override
+      REDIS_ARGS: "--requirepass redis123"
     ports:
       - "6379:6379"
       - "8001:8001"
@@ -66,93 +44,47 @@ services:
       retries: 5
 
   # ════════════════════════════════════════════════════════════════════
-  # ZOOKEEPER
-  # Kafka's coordinator — manages broker metadata, leader election,
-  # topic partition assignments. Kafka CANNOT start without Zookeeper.
-  # (KRaft mode removes this requirement but Confluent 7.6 still uses ZK)
-  # You never talk to Zookeeper directly — Kafka uses it internally.
+  # ZOOKEEPER — unchanged
   # ════════════════════════════════════════════════════════════════════
   zookeeper:
     image: confluentinc/cp-zookeeper:7.6.0
     container_name: shortlyai-zookeeper
     environment:
-      ZOOKEEPER_CLIENT_PORT: 2181     # port Kafka connects to Zookeeper on
-      ZOOKEEPER_TICK_TIME: 2000       # heartbeat interval in ms — 2s is default
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
     ports:
-      - "2181:2181"                   # exposed only for debugging — services never use this directly
+      - "2181:2181"
 
   # ════════════════════════════════════════════════════════════════════
-  # KAFKA
-  # Message broker — async communication between microservices.
-  # Topics used in ShortlyAI:
-  #   url.created    — url-service → ai-service (classify new URL)
-  #   url.clicks     — url-service → analytics-service (track clicks)
-  #   url.classified — ai-service  → url-service (classification result)
-  #   url.deleted    — url-service → analytics-service (cleanup on delete)
-  #
-  # TWO LISTENERS EXPLAINED:
-  # Kafka must advertise different addresses to different types of clients:
-  #
-  #   PLAINTEXT (port 9092):
-  #     → advertises "localhost:9092"
-  #     → used by IntelliJ (Java services running on host machine)
-  #     → localhost works because port 9092 is mapped host→container
-  #
-  #   PLAINTEXT_INTERNAL (port 29092):
-  #     → advertises "kafka:29092"
-  #     → used by OTHER Docker containers (kafka-ui, future service containers)
-  #     → "kafka" resolves via Docker internal DNS — containers find each other by service name
-  #     → port 29092 NOT exposed to host — internal Docker network only
-  #
-  # Without two listeners:
-  #   Single "localhost:9092" → kafka-ui inside Docker tries localhost → hits itself → fails
-  #   Single "kafka:9092"     → IntelliJ on host can't resolve "kafka" hostname → fails
+  # KAFKA — unchanged
+  # NOTE: app containers below use "kafka:29092" (internal listener) —
+  # they're now Docker containers too, same as kafka-ui.
   # ════════════════════════════════════════════════════════════════════
   kafka:
     image: confluentinc/cp-kafka:7.6.0
     container_name: shortlyai-kafka
     depends_on:
-      - zookeeper                   # Kafka waits for Zookeeper to start first
+      - zookeeper
     ports:
-      - "9092:9092"                 # ONLY external port exposed — IntelliJ connects here
-      # 29092 intentionally NOT exposed — Docker-internal only
+      - "9092:9092"
     environment:
-      KAFKA_BROKER_ID: 1            # unique ID for this broker — we only have one broker locally
-
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181   # Kafka finds Zookeeper via Docker DNS
-
-      # Declare both listeners — what addresses Kafka binds to inside container
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_INTERNAL://0.0.0.0:29092
-      # 0.0.0.0 = listen on all interfaces inside container
-
-      # What Kafka tells clients to connect to — different per listener
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://kafka:29092
-
-      # Maps each listener name → security protocol (both are plaintext, no TLS locally)
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
-
-      # Which listener Kafka brokers use to talk to each other (multi-broker setup)
-      # Must be internal — brokers are in Docker, resolve each other by service name
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT_INTERNAL
-
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1     # 1 = single broker — fine for dev, never use 1 in prod
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: true          # topics auto-created on first publish — no manual setup needed
-      KAFKA_LOG_RETENTION_HOURS: 168                 # keep messages for 7 days — useful for local debugging
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: true
+      KAFKA_LOG_RETENTION_HOURS: 168
     healthcheck:
       test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
-      interval: 15s      # Kafka takes longer to start than Postgres/Redis — give it time
+      interval: 15s
       timeout: 10s
       retries: 5
 
   # ════════════════════════════════════════════════════════════════════
-  # KAFKA UI
-  # Visual dashboard for Kafka — open localhost:8090 in browser.
-  # Use this to:
-  #   - See all topics (url.clicks, url.created, etc.)
-  #   - Browse individual messages — verify url-service published correctly
-  #   - Check consumer group lag — is analytics-service keeping up?
-  #   - Manually publish test messages during development
-  # Essential debugging tool — use it constantly while building.
+  # KAFKA UI — unchanged
   # ════════════════════════════════════════════════════════════════════
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
@@ -160,29 +92,175 @@ services:
     depends_on:
       - kafka
     ports:
-      - "8090:8080"     # open localhost:8090 in browser (8080 conflicts with api-gateway)
+      - "8090:8080"
     environment:
       KAFKA_CLUSTERS_0_NAME: local
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092    # uses INTERNAL listener — kafka-ui is inside Docker
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
 
-  # eureka-server service
+  # ════════════════════════════════════════════════════════════════════
+  # EUREKA SERVER
+  # Fixed: dockerfile path was "DockerFile" (wrong case) -> "Dockerfile"
+  # Removed misplaced EUREKA_URL env (that var belongs to CLIENT services,
+  # not the server itself)
+  # ════════════════════════════════════════════════════════════════════
   eureka-server:
     build:
       context: .
-      dockerfile: eureka-server/DockerFile
+      dockerfile: eureka-server/Dockerfile
+    container_name: shortlyai-eureka
     ports:
       - "8761:8761"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8761/actuator/health"]
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/127.0.0.1/8761' || exit 1"]
       interval: 20s
       timeout: 10s
       retries: 5
       start_period: 40s   # Eureka takes ~30s to fully start
 
-  # Every other service — add these env vars + depends_on
+  # ════════════════════════════════════════════════════════════════════
+  # API-GATEWAY :8080
+  # Entry point — routes to all 4 services via Eureka service discovery
+  # depends_on conditions: waits for infra to be HEALTHY, not just started
+  # ════════════════════════════════════════════════════════════════════
+  api-gateway:
+    build:
+      context: .
+      dockerfile: api-gateway/Dockerfile
+    container_name: shortlyai-api-gateway
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env                          # pulls JWT_SECRET, REDIS_PASSWORD etc
     environment:
-    - EUREKA_URL=http://eureka-server:8761/eureka/   # Docker DNS resolves eureka-server
+      REDIS_HOST: redis                # Docker DNS — resolves to redis container
+      EUREKA_URL: http://eureka-server:8761/eureka/
+    depends_on:
+      redis:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
 
+  # ════════════════════════════════════════════════════════════════════
+  # AUTH-SERVICE :8081
+  # ⚠ REQUIRES .env to have MAIL_USERNAME + MAIL_PASSWORD set —
+  # these have NO defaults in application.yaml. Missing them =
+  # startup crash (placeholder resolution failure).
+  # ════════════════════════════════════════════════════════════════════
+  auth-service:
+    build:
+      context: .
+      dockerfile: auth-service/Dockerfile
+    container_name: shortlyai-auth-service
+    ports:
+      - "8081:8081"
+    env_file:
+      - .env                          # JWT_SECRET, DB_USER/PASS, REDIS_PASS,
+      # GOOGLE_CLIENT_ID/SECRET, MAIL_USERNAME/PASSWORD
+    environment:
+      DB_HOST: postgres
+      DB_NAME: shortlyai_auth
+      REDIS_HOST: redis
+      EUREKA_URL: http://eureka-server:8761/eureka/
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+
+  # ════════════════════════════════════════════════════════════════════
+  # URL-SERVICE :8082
+  # KAFKA_BOOTSTRAP_SERVERS overridden to internal listener (kafka:29092) —
+  # this container talks to kafka over Docker network, not localhost
+  # ════════════════════════════════════════════════════════════════════
+  url-service:
+    build:
+      context: .
+      dockerfile: url-service/Dockerfile
+    container_name: shortlyai-url-service
+    ports:
+      - "8082:8082"
+    env_file:
+      - .env                          # JWT_SECRET, DB_USER/PASS, REDIS_PASS
+    environment:
+      DB_HOST: postgres
+      DB_NAME: shortlyai_urls
+      REDIS_HOST: redis
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      EUREKA_URL: http://eureka-server:8761/eureka/
+      # BASE_DOMAIN left at default (http://localhost:8082) —
+      # short URLs are clicked from the HOST browser, localhost:8082
+      # still resolves correctly via the port mapping above
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+
+  # ════════════════════════════════════════════════════════════════════
+  # ANALYTICS-SERVICE :8083
+  # ════════════════════════════════════════════════════════════════════
+  analytics-service:
+    build:
+      context: .
+      dockerfile: analytics-service/Dockerfile
+    container_name: shortlyai-analytics-service
+    ports:
+      - "8083:8083"
+    env_file:
+      - .env
+    environment:
+      DB_HOST: postgres
+      DB_NAME: shortlyai_analytics
+      REDIS_HOST: redis
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      EUREKA_URL: http://eureka-server:8761/eureka/
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+
+  # ════════════════════════════════════════════════════════════════════
+  # AI-SERVICE :8084
+  # No DB. Calls url-service + analytics-service by Docker DNS name
+  # (not localhost — those are now separate containers on the same network)
+  # ⚠ REQUIRES .env to have GROQ_BASE_URL, GROQ_MODEL, GROQ_TEMPERATURE,
+  # GROQ_MAX_TOKENS set — NO defaults in application.yaml, missing =
+  # startup crash.
+  # ════════════════════════════════════════════════════════════════════
+  ai-service:
+    build:
+      context: .
+      dockerfile: ai-service/Dockerfile
+    container_name: shortlyai-ai-service
+    ports:
+      - "8084:8084"
+    env_file:
+      - .env                          # GROQ_API_KEY/BASE_URL/MODEL/TEMPERATURE/MAX_TOKENS
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      EUREKA_URL: http://eureka-server:8761/eureka/
+      URL_SERVICE_BASE_URL: http://url-service:8082         # Docker DNS, not localhost
+      ANALYTICS_SERVICE_BASE_URL: http://analytics-service:8083
+    depends_on:
+      kafka:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+
+  # ════════════════════════════════════════════════════════════════════
+  # OBSERVABILITY — unchanged
+  # ════════════════════════════════════════════════════════════════════
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus
@@ -191,7 +269,7 @@ services:
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
     extra_hosts:
-      - "host.docker.internal:host-gateway"   # needed on Linux; harmless on Windows/Mac
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
   grafana:
@@ -203,7 +281,7 @@ services:
       - ./grafana/provisioning:/etc/grafana/provisioning
       - grafana-data:/var/lib/grafana
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin   # change later, fine for local
+      - GF_SECURITY_ADMIN_PASSWORD=admin
     depends_on:
       - prometheus
     restart: unless-stopped
@@ -217,23 +295,17 @@ services:
     restart: unless-stopped
 
   promtail:
-      image: grafana/promtail:latest
-      container_name: promtail
-      volumes:
-        - ./promtail-config.yml:/etc/promtail/config.yml
-        - D:/Coding/SpringBoot/shortlyai:/app:ro
-      command: -config.file=/etc/promtail/config.yml
-      depends_on:
-        - loki
-      restart: unless-stopped
+    image: grafana/promtail:latest
+    container_name: promtail
+    volumes:
+      - ./promtail-config.yml:/etc/promtail/config.yml
+      - D:/Coding/SpringBoot/shortlyai:/app:ro
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+    restart: unless-stopped
 
-# ════════════════════════════════════════════════════════════════════
-# NAMED VOLUMES
-# Docker manages these — data lives outside container lifecycle.
-# Container deleted → volume survives → data safe.
-# "docker compose down -v" deletes volumes too — only do this for full reset.
-# ════════════════════════════════════════════════════════════════════
 volumes:
-  postgres-data:    # Postgres table data — all 4 databases
-  redis-data:       # Redis keys — cache, tokens, counters, Bloom filter
+  postgres-data:
+  redis-data:
   grafana-data:
