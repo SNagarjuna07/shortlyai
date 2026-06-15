@@ -61,6 +61,20 @@
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
+
+        <!-- REMOVE: resilience4j-circuitbreaker, resilience4j-micrometer, spring-retry -->
+        <!-- (resilience4j-spring-boot4 brings circuitbreaker+retry+micrometer transitively) -->
+
+        <!-- Core Starter (Compatible with Boot 4) -->
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-spring-boot4</artifactId>
+            <version>2.4.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aspectj</artifactId>
+        </dependency>
     </dependencies>
 
     <build>
