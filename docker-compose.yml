@@ -1,10 +1,8 @@
 # docker-compose.yml — project root
-version: '3.8'
-
 services:
 
   # ════════════════════════════════════════════════════════════════════
-  # POSTGRES 16 — unchanged
+  # POSTGRES 16
   # ════════════════════════════════════════════════════════════════════
   postgres:
     image: postgres:16
@@ -25,7 +23,7 @@ services:
       retries: 5
 
   # ════════════════════════════════════════════════════════════════════
-  # REDIS STACK — unchanged
+  # REDIS STACK
   # ════════════════════════════════════════════════════════════════════
   redis:
     image: redis/redis-stack:latest
@@ -44,7 +42,7 @@ services:
       retries: 5
 
   # ════════════════════════════════════════════════════════════════════
-  # ZOOKEEPER — unchanged
+  # ZOOKEEPER
   # ════════════════════════════════════════════════════════════════════
   zookeeper:
     image: confluentinc/cp-zookeeper:7.6.0
@@ -56,8 +54,8 @@ services:
       - "2181:2181"
 
   # ════════════════════════════════════════════════════════════════════
-  # KAFKA — unchanged
-  # NOTE: app containers below use "kafka:29092" (internal listener) —
+  # KAFKA
+  # NOTE: app containers below use "kafka:29092" (internal listener)
   # they're now Docker containers too, same as kafka-ui.
   # ════════════════════════════════════════════════════════════════════
   kafka:
@@ -84,7 +82,7 @@ services:
       retries: 5
 
   # ════════════════════════════════════════════════════════════════════
-  # KAFKA UI — unchanged
+  # KAFKA UI
   # ════════════════════════════════════════════════════════════════════
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
@@ -99,7 +97,6 @@ services:
 
   # ════════════════════════════════════════════════════════════════════
   # EUREKA SERVER
-  # Fixed: dockerfile path was "DockerFile" (wrong case) -> "Dockerfile"
   # Removed misplaced EUREKA_URL env (that var belongs to CLIENT services,
   # not the server itself)
   # ════════════════════════════════════════════════════════════════════
@@ -119,7 +116,7 @@ services:
 
   # ════════════════════════════════════════════════════════════════════
   # API-GATEWAY :8080
-  # Entry point — routes to all 4 services via Eureka service discovery
+  # Entry point - routes to all 4 services via Eureka service discovery
   # depends_on conditions: waits for infra to be HEALTHY, not just started
   # ════════════════════════════════════════════════════════════════════
   api-gateway:
@@ -142,9 +139,6 @@ services:
 
   # ════════════════════════════════════════════════════════════════════
   # AUTH-SERVICE :8081
-  # ⚠ REQUIRES .env to have MAIL_USERNAME + MAIL_PASSWORD set —
-  # these have NO defaults in application.yaml. Missing them =
-  # startup crash (placeholder resolution failure).
   # ════════════════════════════════════════════════════════════════════
   auth-service:
     build:
@@ -154,8 +148,7 @@ services:
     ports:
       - "8081:8081"
     env_file:
-      - .env                          # JWT_SECRET, DB_USER/PASS, REDIS_PASS,
-      # GOOGLE_CLIENT_ID/SECRET, MAIL_USERNAME/PASSWORD
+      - .env
     environment:
       DB_HOST: postgres
       DB_NAME: shortlyai_auth
@@ -171,8 +164,6 @@ services:
 
   # ════════════════════════════════════════════════════════════════════
   # URL-SERVICE :8082
-  # KAFKA_BOOTSTRAP_SERVERS overridden to internal listener (kafka:29092) —
-  # this container talks to kafka over Docker network, not localhost
   # ════════════════════════════════════════════════════════════════════
   url-service:
     build:
@@ -182,14 +173,14 @@ services:
     ports:
       - "8082:8082"
     env_file:
-      - .env                          # JWT_SECRET, DB_USER/PASS, REDIS_PASS
+      - .env
     environment:
       DB_HOST: postgres
       DB_NAME: shortlyai_urls
       REDIS_HOST: redis
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       EUREKA_URL: http://eureka-server:8761/eureka/
-      # BASE_DOMAIN left at default (http://localhost:8082) —
+      # BASE_DOMAIN left at default (http://localhost:8082) -
       # short URLs are clicked from the HOST browser, localhost:8082
       # still resolves correctly via the port mapping above
     depends_on:
@@ -232,11 +223,6 @@ services:
 
   # ════════════════════════════════════════════════════════════════════
   # AI-SERVICE :8084
-  # No DB. Calls url-service + analytics-service by Docker DNS name
-  # (not localhost — those are now separate containers on the same network)
-  # ⚠ REQUIRES .env to have GROQ_BASE_URL, GROQ_MODEL, GROQ_TEMPERATURE,
-  # GROQ_MAX_TOKENS set — NO defaults in application.yaml, missing =
-  # startup crash.
   # ════════════════════════════════════════════════════════════════════
   ai-service:
     build:
@@ -259,7 +245,7 @@ services:
         condition: service_healthy
 
   # ════════════════════════════════════════════════════════════════════
-  # OBSERVABILITY — unchanged
+  # OBSERVABILITY
   # ════════════════════════════════════════════════════════════════════
   prometheus:
     image: prom/prometheus:latest
