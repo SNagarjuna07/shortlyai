@@ -26,25 +26,56 @@ spring:
               predicates:
                 - Path=/api/v1/auth/**, /oauth2/**, /login/oauth2/**
 
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: authServiceCB
+                    fallbackUri: forward:/fallback/auth-service
+
+
             - id: url-service
               uri: lb://url-service
               predicates:
                 - Path=/api/v1/urls/**
+
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: urlServiceCB
+                    fallbackUri: forward:/fallback/url-service
 
             - id: analytics-service
               uri: lb://analytics-service
               predicates:
                 - Path=/api/v1/analytics/**
 
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: analyticsServiceCB
+                    fallbackUri: forward:/fallback/analytics-service
+
             - id: ai-service
               uri: lb://ai-service
               predicates:
                 - Path=/api/v1/ai/**
 
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: aiServiceCB
+                    fallbackUri: forward:/fallback/ai-service
+
             - id: url-redirect
               uri: lb://url-service         # redirect uses same service as url
               predicates:
                 - Path=/r/{slug}
+
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: urlServiceCB
+                    fallbackUri: forward:/fallback/url-service
 
           httpclient:
             connect-timeout: 2000
