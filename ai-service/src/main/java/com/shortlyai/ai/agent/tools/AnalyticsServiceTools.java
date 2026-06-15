@@ -1,5 +1,7 @@
 package com.shortlyai.ai.agent.tools;
 
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.ai.tool.annotation.Tool;
@@ -31,6 +33,8 @@ public class AnalyticsServiceTools {
     private record StatsResponse(Long urlId, long totalClicks, String message) {}
 
     @Tool(description = "Get click analytics for a shortened URL by its urlId")
+    @CircuitBreaker(name = "analytics-service", fallbackMethod = "getUrlStatsFallback")
+    @Retry(name = "analytics-service")
     public String getUrlStats(
             @ToolParam(description = "numeric ID of the shortened URL") Long urlId,
             ToolContext toolContext
@@ -49,13 +53,21 @@ public class AnalyticsServiceTools {
         log.debug("getUrlStats result userId: {}, urlId: {}, totalClicks: {}",
                 userId, urlId, stats.totalClicks());
 
-        return "URL %d has %d total clicks"
-                .formatted(stats.urlId(), stats.totalClicks());
+        return "URL %d has %d total clicks".formatted(stats.urlId(), stats.totalClicks());
+    }
+
+    public String getUrlStatsFallback(Long urlId, ToolContext toolContext, Throwable ex) {
+
+        log.error("analytics-service unavailable for getUrlStats, urlId: {}", urlId, ex);
+
+        return "Click stats for URL %d are temporarily unavailable.".formatted(urlId);
     }
 
     private record TopUrl(Long urlId, long clickCount) {}
 
     @Tool(description = "Get the top performing URLs by click count for the current user")
+    @CircuitBreaker(name = "analytics-service", fallbackMethod = "getTopUrlsFallback")
+    @Retry(name = "analytics-service")
     public String getTopUrls(
             @ToolParam(description = "how many top URLs to return") int limit,
             ToolContext toolContext
@@ -69,7 +81,7 @@ public class AnalyticsServiceTools {
                 .uri(apiPrefix + "/analytics/top?limit={limit}", limit)
                 .header("X-User-Id", userId)
                 .retrieve()
-                .body(new ParameterizedTypeReference<List<TopUrl>>() {} );
+                .body(new ParameterizedTypeReference<List<TopUrl>>() {});
 
         log.debug("getTopUrls result userId: {}, count: {}", userId, topUrls.size());
 
@@ -82,5 +94,12 @@ public class AnalyticsServiceTools {
         }
 
         return sb.toString();
+    }
+
+    public String getTopUrlsFallback(int limit, ToolContext toolContext, Throwable ex) {
+
+        log.error("analytics-service unavailable for getTopUrls, limit: {}", limit, ex);
+
+        return "Top URLs list is temporarily unavailable - analytics-service is down.";
     }
 }
