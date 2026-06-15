@@ -48,7 +48,7 @@ public class UrlController {
         return ResponseEntity.ok(shorteningService.getUserUrls(userId, pageable));
     }
 
-    @GetMapping("/{id:\\d+}")
+    @GetMapping("/id/{id}")
     public ResponseEntity<ShortenResponse> getUrl(
             @PathVariable Long id,
             @AuthenticationPrincipal UUID userId
@@ -60,7 +60,7 @@ public class UrlController {
 
     }
 
-    @GetMapping("/{slug}")
+    @GetMapping("/slug/{slug}")
     public ResponseEntity<ShortenResponse> getUrlBySlug(
             @PathVariable String slug,
             @AuthenticationPrincipal UUID userId
@@ -71,7 +71,7 @@ public class UrlController {
         return ResponseEntity.ok(shorteningService.getUrlBySlug(slug, userId));
     }
 
-    @DeleteMapping("/{id:\\\\d+}")
+    @DeleteMapping("/id/{id}")
     public ResponseEntity<Void> deleteUrl(
             @PathVariable Long id,
             @AuthenticationPrincipal UUID userId
@@ -84,7 +84,7 @@ public class UrlController {
         return ResponseEntity.status(HttpStatus.NO_CONTENT).build();
     }
 
-    @DeleteMapping("/delete/{slug}")
+    @DeleteMapping("/slug/{slug}")
     public ResponseEntity<Void> deleteUrl(
             @PathVariable String slug,
             @RequestHeader("X-User-Id") UUID userId
