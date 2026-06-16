@@ -29,7 +29,6 @@ public class GatewayResilienceConfig {
                         .slowCallRateThreshold(50)
                         .waitDurationInOpenState(Duration.ofSeconds(10))
                         .permittedNumberOfCallsInHalfOpenState(3)
-                        .recordExceptions(ResourceAccessException.class, HttpServerErrorException.class)
                         .build())
 
                 // matches existing httpclient.response-timeout: 5s
