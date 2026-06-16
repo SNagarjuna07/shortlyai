@@ -12,8 +12,17 @@ spring:
       chat:
         options:
           model: ${GROQ_MODEL}
-          temperature: ${GROQ_TEMPERATURE}                        # low temp = consistent classification output
-          max-tokens: ${GROQ_MAX_TOKENS}                         # short responses, keep cheap/fast
+          temperature: ${GROQ_TEMPERATURE}  # low temp = consistent classification output
+          max-tokens: ${GROQ_MAX_TOKENS}    # short response    mcp:
+      server:
+        enabled: true
+        name: shortlyai-mcp-server
+        version: 1.0.0
+        type: SYNC            # SYNC = blocking, matches spring-boot-starter-web
+        sse-endpoint: /mcp/sse         # clients connect here (GET - SSE stream)
+        sse-message-endpoint: /mcp/message  # clients send requests here (POST)s, keep cheap/fast
+
+
 
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
