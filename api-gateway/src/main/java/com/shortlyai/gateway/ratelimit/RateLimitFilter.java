@@ -106,11 +106,12 @@ public class RateLimitFilter implements GlobalFilter, Ordered {
     // routeId must match keys in rate-limit.routes yaml (and in the bean's config map)
     private String resolveRouteId(String path) {
 
-        if (path.startsWith(apiPrefix + "/auth"))      return "auth";       // strict - brute force target
+        if (path.startsWith(apiPrefix + "/auth"))       return "auth";       // strict - brute force target
         if (path.startsWith(apiPrefix + "/urls"))       return "url";        // moderate
-        if (path.startsWith(apiPrefix + "/analytics")) return "analytics";  // lenient - read-heavy
+        if (path.startsWith(apiPrefix + "/analytics"))  return "analytics";  // lenient - read-heavy
         if (path.startsWith(apiPrefix + "/ai"))         return "ai";         // very strict - expensive ops
-        if (path.startsWith("/r/"))                return "url";        // redirect = same bucket as url-service
+        if (path.startsWith("/r/"))                     return "url";        // redirect = same bucket as url-service
+        if (path.startsWith("/mcp/"))                   return "mcp";
 
         return "default"; // catch-all - uses constructor fallback config
     }
