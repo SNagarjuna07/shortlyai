@@ -7,22 +7,20 @@ spring:
 
   ai:
     openai:
-      api-key: ${GROQ_API_KEY:}                  # key from .env, Groq not OpenAI
+      api-key: ${GROQ_API_KEY:}
       base-url: ${GROQ_BASE_URL}
       chat:
         options:
           model: ${GROQ_MODEL}
-          temperature: ${GROQ_TEMPERATURE}  # low temp = consistent classification output
-          max-tokens: ${GROQ_MAX_TOKENS}    # short response    mcp:
+          temperature: ${GROQ_TEMPERATURE}
+          max-tokens: ${GROQ_MAX_TOKENS}
+
+    mcp:
       server:
         enabled: true
         name: shortlyai-mcp-server
         version: 1.0.0
-        type: SYNC            # SYNC = blocking, matches spring-boot-starter-web
-        sse-endpoint: /mcp/sse         # clients connect here (GET - SSE stream)
-        sse-message-endpoint: /mcp/message  # clients send requests here (POST)s, keep cheap/fast
-
-
+        protocol: STREAMABLE
 
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
@@ -106,11 +104,11 @@ resilience4j:
         waitDurationInOpenState: 10s
         permittedNumberOfCallsInHalfOpenState: 3
         automaticTransitionFromOpenToHalfOpenEnabled: true
-        # 4xx (not found, conflict) — rethrow untouched, no fallback,
+        # 4xx (not found, conflict) - rethrow untouched, no fallback,
         # doesn't count toward circuit stats
         ignoreExceptions:
           - org.springframework.web.client.HttpClientErrorException
-        # connection issues + 5xx — count toward circuit state, trigger fallback
+        # connection issues + 5xx - count toward circuit state, trigger fallback
         recordExceptions:
           - org.springframework.web.client.ResourceAccessException
           - org.springframework.web.client.HttpServerErrorException
