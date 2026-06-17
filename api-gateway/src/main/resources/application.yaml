@@ -144,3 +144,7 @@ rate-limit:
       replenish-rate: 5
       burst-capacity: 10
       requested-tokens: 1
+    mcp:
+      replenish-rate: 100    # high - SSE is one connection, not per-request
+      burst-capacity: 100
+      requested-tokens: 1
