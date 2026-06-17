@@ -1,36 +1,23 @@
 package com.shortlyai.ai.agent.tools;
 
+import com.shortlyai.ai.operations.AnalyticsOperationsService;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestClient;
 
 import java.util.List;
 
 @Component
+@RequiredArgsConstructor
 @Slf4j
 public class AnalyticsServiceTools {
 
-    private final RestClient analyticsServiceClient;
-
-    private final String apiPrefix;
-
-    public AnalyticsServiceTools(
-            @Qualifier("analyticsServiceClient") RestClient analyticsServiceClient,
-            @Value("${api.prefix}") String apiPrefix
-    ) {
-        this.analyticsServiceClient = analyticsServiceClient;
-        this.apiPrefix = apiPrefix;
-    }
-
-    private record StatsResponse(Long urlId, long totalClicks, String message) {}
+    private final AnalyticsOperationsService analyticsOps;
 
     @Tool(description = "Get click analytics for a shortened URL by its urlId")
     @CircuitBreaker(name = "analytics-service", fallbackMethod = "getUrlStatsFallback")
@@ -42,16 +29,11 @@ public class AnalyticsServiceTools {
 
         String userId = (String) toolContext.getContext().get("userId");
 
-        log.info("Tool getUrlStats invoked userId: {}, urlId: {}", userId, urlId);
+        log.info("Tool getUrlStats userId: {}, urlId: {}", userId, urlId);
 
-        StatsResponse stats = analyticsServiceClient.get()
-                .uri(apiPrefix + "/analytics/{urlId}", urlId)
-                .header("X-User-Id", userId)
-                .retrieve()
-                .body(StatsResponse.class);
+        AnalyticsOperationsService.StatsResult stats = analyticsOps.getStats(urlId, userId);
 
-        log.debug("getUrlStats result userId: {}, urlId: {}, totalClicks: {}",
-                userId, urlId, stats.totalClicks());
+        log.debug("getUrlStats urlId: {}, totalClicks: {}", urlId, stats.totalClicks());
 
         return "URL %d has %d total clicks".formatted(stats.urlId(), stats.totalClicks());
     }
@@ -60,10 +42,8 @@ public class AnalyticsServiceTools {
 
         log.error("analytics-service unavailable for getUrlStats, urlId: {}", urlId, ex);
 
-        return "Click stats for URL %d are temporarily unavailable.".formatted(urlId);
+        return "Click stats for URL %d temporarily unavailable.".formatted(urlId);
     }
-
-    private record TopUrl(Long urlId, long clickCount) {}
 
     @Tool(description = "Get the top performing URLs by click count for the current user")
     @CircuitBreaker(name = "analytics-service", fallbackMethod = "getTopUrlsFallback")
@@ -75,22 +55,17 @@ public class AnalyticsServiceTools {
 
         String userId = (String) toolContext.getContext().get("userId");
 
-        log.info("Tool getTopUrls invoked userId: {}, limit: {}", userId, limit);
+        log.info("Tool getTopUrls userId: {}, limit: {}", userId, limit);
 
-        List<TopUrl> topUrls = analyticsServiceClient.get()
-                .uri(apiPrefix + "/analytics/top?limit={limit}", limit)
-                .header("X-User-Id", userId)
-                .retrieve()
-                .body(new ParameterizedTypeReference<List<TopUrl>>() {});
+        List<AnalyticsOperationsService.TopUrlResult> topUrls = analyticsOps.getTopUrls(limit, userId);
 
-        log.debug("getTopUrls result userId: {}, count: {}", userId, topUrls.size());
+        log.debug("getTopUrls userId: {}, count: {}", userId, topUrls.size());
 
         StringBuilder sb = new StringBuilder("Top URLs:\n");
 
-        for (TopUrl url : topUrls) {
+        for (AnalyticsOperationsService.TopUrlResult url : topUrls) {
             sb.append("- urlId ").append(url.urlId())
-                    .append(": ").append(url.clickCount())
-                    .append(" clicks\n");
+                    .append(": ").append(url.clickCount()).append(" clicks\n");
         }
 
         return sb.toString();
@@ -100,6 +75,6 @@ public class AnalyticsServiceTools {
 
         log.error("analytics-service unavailable for getTopUrls, limit: {}", limit, ex);
 
-        return "Top URLs list is temporarily unavailable - analytics-service is down.";
+        return "Top URLs temporarily unavailable - analytics-service is down.";
     }
 }

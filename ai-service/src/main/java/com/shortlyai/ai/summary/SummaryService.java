@@ -1,36 +1,23 @@
 package com.shortlyai.ai.summary;
 
+import com.shortlyai.ai.operations.AnalyticsOperationsService;
 import com.shortlyai.ai.summary.dto.SummaryResponse;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestClient;
 
 @Service
+@RequiredArgsConstructor
 @Slf4j
 public class SummaryService {
 
     private final ChatClient chatClient;
 
-    private final RestClient analyticsServiceClient;
-
-    private final String apiPrefix;
-
-    public SummaryService(
-            ChatClient chatClient,
-            @Qualifier("analyticsServiceClient") RestClient analyticsServiceClient,
-            @Value("${api.prefix}") String apiPrefix
-    ) {
-        this.chatClient = chatClient;
-        this.analyticsServiceClient = analyticsServiceClient;
-        this.apiPrefix = apiPrefix;
-    }
-
-    private record StatsResponse(long urlId, long totalClicks, String message) {}
+    // Shared analytics HTTP ops - no direct RestClient here
+    private final AnalyticsOperationsService analyticsOps;
 
     @CircuitBreaker(name = "analytics-service", fallbackMethod = "summarizeFallback")
     @Retry(name = "analytics-service")
@@ -38,11 +25,7 @@ public class SummaryService {
 
         log.info("Generating summary for urlId: {}, userId: {}", urlId, userId);
 
-        StatsResponse stats = analyticsServiceClient.get()
-                .uri(apiPrefix + "/analytics/{urlId}", urlId)
-                .header("X-User-Id", userId)
-                .retrieve()
-                .body(StatsResponse.class);
+        AnalyticsOperationsService.StatsResult stats = analyticsOps.getStats(urlId, userId);
 
         String prompt = """
                 Write a short, friendly 2-sentence summary of this URL's
@@ -68,7 +51,11 @@ public class SummaryService {
                 and to check back shortly.
                 """;
 
-        String text = chatClient.prompt().user(prompt).call().content();
+        String text = chatClient
+                .prompt()
+                .user(prompt)
+                .call()
+                .content();
 
         return new SummaryResponse(text);
     }
