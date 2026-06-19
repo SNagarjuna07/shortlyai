@@ -127,7 +127,6 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
         // OAuth2 callback - Spring Security handles these internally in auth-service
         if (path.startsWith("/oauth2/") || path.startsWith("/login/oauth2/")) return true;
 
-        // MCP call
         if (path.equals("/mcp") || path.startsWith("/mcp/")) return true;
 
         // Short URL redirect endpoint
