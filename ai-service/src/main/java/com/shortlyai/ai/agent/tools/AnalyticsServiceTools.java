@@ -25,7 +25,7 @@ public class AnalyticsServiceTools {
 
         String userId = (String) toolContext.getContext().get("userId");
 
-        log.info("Tool getUrlStats userId={} urlId={}", userId, urlId);
+        log.info("Tool getUrlStats userId: {} urlId: {}", userId, urlId);
 
         AnalyticsOperationsService.StatsResult stats =
                 resilientAnalyticsOps.getStats(urlId, userId);
@@ -34,7 +34,7 @@ public class AnalyticsServiceTools {
             return "Click stats for URL %d temporarily unavailable.".formatted(urlId);
         }
 
-        log.debug("getUrlStats urlId={} totalClicks={}", urlId, stats.totalClicks());
+        log.debug("getUrlStats urlId: {} totalClicks: {}", urlId, stats.totalClicks());
 
         return "URL %d has %d total clicks".formatted(stats.urlId(), stats.totalClicks());
     }
@@ -47,17 +47,17 @@ public class AnalyticsServiceTools {
 
         String userId = (String) toolContext.getContext().get("userId");
 
-        log.info("Tool getTopUrls userId={} limit={}", userId, limit);
+        log.info("Tool getTopUrls userId: {} limit: {}", userId, limit);
 
         List<AnalyticsOperationsService.TopUrlResult> topUrls =
                 resilientAnalyticsOps.getTopUrls(limit, userId);
 
         // Empty list is the fallback sentinel from ResilientAnalyticsOps
         if (topUrls.isEmpty()) {
-            return "Top URLs temporarily unavailable — analytics-service is down.";
+            return "Top URLs temporarily unavailable, analytics-service is down.";
         }
 
-        log.debug("getTopUrls userId={} count={}", userId, topUrls.size());
+        log.debug("getTopUrls userId: {} count: {}", userId, topUrls.size());
 
         StringBuilder sb = new StringBuilder("Top URLs:\n");
 

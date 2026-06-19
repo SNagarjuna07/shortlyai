@@ -9,13 +9,6 @@ import org.springframework.stereotype.Service;
 import java.util.Collections;
 import java.util.List;
 
-/**
- * Resilience wrapper around AnalyticsOperationsService.
- *
- * Same reasoning as ResilientUrlOps — @Tool AOP bypass means annotations on
- * tool methods are dead code. All CB + Retry annotations live here, invoked
- * through the Spring proxy by both agent tools and MCP tools.
- */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -27,7 +20,7 @@ public class ResilientAnalyticsOps {
     @Retry(name = "analytics-service")
     public AnalyticsOperationsService.StatsResult getStats(Long urlId, String userId) {
 
-        log.debug("ResilientAnalyticsOps.getStats userId={} urlId={}", userId, urlId);
+        log.debug("Fetching URL stats for userId: {} urlId: {}", userId, urlId);
 
         return analyticsOps.getStats(urlId, userId);
     }
@@ -35,7 +28,7 @@ public class ResilientAnalyticsOps {
     public AnalyticsOperationsService.StatsResult getStatsFallback(
             Long urlId, String userId, Throwable ex) {
 
-        log.error("analytics-service CB/Retry exhausted for getStats userId={} urlId={}", userId, urlId, ex);
+        log.error("analytics-service is not available. Please try after some time");
 
         return null;
     }
@@ -44,7 +37,7 @@ public class ResilientAnalyticsOps {
     @Retry(name = "analytics-service")
     public List<AnalyticsOperationsService.TopUrlResult> getTopUrls(int limit, String userId) {
 
-        log.debug("ResilientAnalyticsOps.getTopUrls userId={} limit={}", userId, limit);
+        log.debug("Fetching top URLs for userId: {} limit: {}", userId, limit);
 
         return analyticsOps.getTopUrls(limit, userId);
     }
@@ -52,7 +45,7 @@ public class ResilientAnalyticsOps {
     public List<AnalyticsOperationsService.TopUrlResult> getTopUrlsFallback(
             int limit, String userId, Throwable ex) {
 
-        log.error("analytics-service CB/Retry exhausted for getTopUrls userId={} limit={}", userId, limit, ex);
+        log.error("analytics-service is down. Failed to fetch your top URLs. Please try again later", ex);
 
         return Collections.emptyList();
     }

@@ -1,80 +1,73 @@
 package com.shortlyai.ai.mcp;
 
 import com.shortlyai.ai.operations.AnalyticsOperationsService;
-import com.shortlyai.ai.operations.ResilientAnalyticsOps;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.stereotype.Component;
-
 import java.util.List;
-import java.util.UUID;
 
-/**
- * MCP-facing analytics tools.
- * Thin shell — resilience delegated to ResilientAnalyticsOps.
- * See McpUrlTools for the full design rationale.
- */
 @Component
 @RequiredArgsConstructor
 @Slf4j
 public class McpAnalyticsTools {
 
-    private final ResilientAnalyticsOps resilientAnalyticsOps;
+    private final AnalyticsOperationsService analyticsOps;
 
-    private void validateUserId(String userId) {
+    // userId from McpKeyFilter-injected context — not from LLM input
+    private String authenticatedUserId() {
 
-        try {
+        String userId = McpUserContext.get();
 
-            UUID.fromString(userId);
+        if (userId == null) {
 
-        } catch (IllegalArgumentException ex) {
-
-            throw new IllegalArgumentException(
-                    "Invalid userId - must be a UUID: " + userId);
+            throw new IllegalStateException("No authenticated userId in MCP context - filter misconfigured");
         }
+
+        return userId;
     }
 
     @Tool(name = "mcp_getUrlStats", description = """
             Get total click count for a shortened URL by its numeric urlId.
-            Use mcp_getUrlDetails first if you only have the slug — it returns the urlId.
+            Use mcp_getUrlDetails first if you only have the slug - it returns the urlId.
             """)
+    @CircuitBreaker(name = "analytics-service", fallbackMethod = "getUrlStatsFallback")
+    @Retry(name = "analytics-service")
     public String getUrlStats(
-            @ToolParam(description = "Numeric urlId (Long) of the shortened URL") Long urlId,
-            @ToolParam(description = "Authenticated user UUID") String userId
+            @ToolParam(description = "Numeric urlId (Long) of the shortened URL") Long urlId
     ) {
 
-        validateUserId(userId);
+        String userId = authenticatedUserId();
 
-        log.info("MCP getUrlStats userId={} urlId={}", userId, urlId);
+        log.info("MCP getUrlStats userId: {}, urlId: {}", userId, urlId);
 
-        AnalyticsOperationsService.StatsResult stats =
-                resilientAnalyticsOps.getStats(urlId, userId);
-
-        if (stats == null) {
-            return "Click stats for URL %d temporarily unavailable.".formatted(urlId);
-        }
+        AnalyticsOperationsService.StatsResult stats = analyticsOps.getStats(urlId, userId);
 
         return "URL with ID %d has %d total clicks".formatted(stats.urlId(), stats.totalClicks());
     }
 
+    public String getUrlStatsFallback(Long urlId, Throwable ex) {
+
+        log.error("analytics-service unavailable for MCP getUrlStats, urlId: {}", urlId, ex);
+
+        return "Click stats for URL %d temporarily unavailable.".formatted(urlId);
+    }
+
     @Tool(name = "mcp_getTopUrls", description = "Get the user's top performing shortened URLs ranked by click count.")
+    @CircuitBreaker(name = "analytics-service", fallbackMethod = "getTopUrlsFallback")
+    @Retry(name = "analytics-service")
     public String getTopUrls(
-            @ToolParam(description = "How many top URLs to return (e.g. 5)") int limit,
-            @ToolParam(description = "Authenticated user UUID") String userId
+            @ToolParam(description = "How many top URLs to return (e.g. 5)") int limit
     ) {
 
-        validateUserId(userId);
+        String userId = authenticatedUserId();
 
-        log.info("MCP getTopUrls userId={} limit={}", userId, limit);
+        log.info("MCP getTopUrls userId: {}, limit: {}", userId, limit);
 
-        List<AnalyticsOperationsService.TopUrlResult> topUrls =
-                resilientAnalyticsOps.getTopUrls(limit, userId);
-
-        if (topUrls.isEmpty()) {
-            return "Top URLs temporarily unavailable — analytics-service is down.";
-        }
+        List<AnalyticsOperationsService.TopUrlResult> topUrls = analyticsOps.getTopUrls(limit, userId);
 
         StringBuilder sb = new StringBuilder("Top %d URLs:\n".formatted(topUrls.size()));
 
@@ -83,5 +76,12 @@ public class McpAnalyticsTools {
         }
 
         return sb.toString();
+    }
+
+    public String getTopUrlsFallback(int limit, Throwable ex) {
+
+        log.error("analytics-service unavailable for MCP getTopUrls, limit: {}", limit, ex);
+
+        return "Top URLs temporarily unavailable - analytics-service is down.";
     }
 }

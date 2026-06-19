@@ -24,7 +24,7 @@ public class UrlServiceTools {
 
         String userId = (String) toolContext.getContext().get("userId");
 
-        log.info("Tool shortenUrl userId={} url={}", userId, originalUrl);
+        log.info("Tool shortenUrl userId: {} url: {}", userId, originalUrl);
 
         UrlOperationsService.ShortenResult result = resilientUrlOps.shorten(originalUrl, userId);
 
@@ -32,7 +32,7 @@ public class UrlServiceTools {
             return "URL shortening temporarily unavailable - please try again shortly.";
         }
 
-        log.debug("shortenUrl slug={} urlId={}", result.slug(), result.id());
+        log.debug("shortenUrl slug: {} urlId: {}", result.slug(), result.id());
 
         return "Short URL created: %s (urlId: %d)".formatted(result.shortUrl(), result.id());
     }
@@ -45,7 +45,7 @@ public class UrlServiceTools {
 
         String userId = (String) toolContext.getContext().get("userId");
 
-        log.info("Tool getUrlDetails userId={} slug={}", userId, slug);
+        log.info("Tool getUrlDetails userId: {} slug: {}", userId, slug);
 
         UrlOperationsService.UrlDetails details = resilientUrlOps.getDetails(slug, userId);
 
@@ -54,7 +54,7 @@ public class UrlServiceTools {
                     .formatted(slug);
         }
 
-        log.debug("getUrlDetails slug={} clicks={}", slug, details.clickCount());
+        log.debug("getUrlDetails slug: {} clicks: {}", slug, details.clickCount());
 
         return "urlId: %d, slug: %s, original URL: %s, clicks: %d"
                 .formatted(details.id(), details.slug(), details.originalUrl(), details.clickCount());
@@ -68,18 +68,15 @@ public class UrlServiceTools {
 
         String userId = (String) toolContext.getContext().get("userId");
 
-        log.warn("Tool deleteUrl userId={} slug={}", userId, slug);
+        log.warn("Tool deleteUrl userId: {} slug: {}", userId, slug);
 
-        try {
+        boolean deleted = resilientUrlOps.delete(slug, userId);
 
-            resilientUrlOps.delete(slug, userId);
-
-        } catch (ResilientUrlOps.UrlServiceUnavailableException ex) {
-
-            return "Could not delete '%s' - url-service temporarily unavailable.".formatted(slug);
+        if (!deleted) {
+            return "Could not delete '%s': url-service temporarily unavailable.".formatted(slug);
         }
 
-        log.info("deleteUrl completed userId={} slug={}", userId, slug);
+        log.info("deleteUrl completed userId: {} slug: {}", userId, slug);
 
         return "Deleted URL with slug: " + slug;
     }

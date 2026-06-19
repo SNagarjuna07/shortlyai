@@ -18,7 +18,7 @@ public class ResilientUrlOps {
     @Retry(name = "url-service")
     public UrlOperationsService.ShortenResult shorten(String originalUrl, String userId) {
 
-        log.debug("ResilientUrlOps.shorten userId={} url={}", userId, originalUrl);
+        log.debug("Shortening URL for userId: {} url: {}", userId, originalUrl);
 
         return urlOps.shorten(originalUrl, userId);
     }
@@ -26,7 +26,7 @@ public class ResilientUrlOps {
     public UrlOperationsService.ShortenResult shortenFallback(
             String originalUrl, String userId, Throwable ex) {
 
-        log.error("url-service CB/Retry exhausted for shorten userId={} url={}", userId, originalUrl, ex);
+        log.error("url-service is not available. Cannot shorten '{}'. Please try again later", originalUrl);
 
         return null;
     }
@@ -35,7 +35,7 @@ public class ResilientUrlOps {
     @Retry(name = "url-service")
     public UrlOperationsService.UrlDetails getDetails(String slug, String userId) {
 
-        log.debug("ResilientUrlOps.getDetails userId={} slug={}", userId, slug);
+        log.debug("Fetching URL details for userId: {} slug: {}", userId, slug);
 
         return urlOps.getDetails(slug, userId);
     }
@@ -43,31 +43,26 @@ public class ResilientUrlOps {
     public UrlOperationsService.UrlDetails getDetailsFallback(
             String slug, String userId, Throwable ex) {
 
-        log.error("url-service CB/Retry exhausted for getDetails userId={} slug={}", userId, slug, ex);
+        log.error("url-service is not available. Please try again later", ex);
 
         return null;
     }
 
     @CircuitBreaker(name = "url-service", fallbackMethod = "deleteFallback")
     @Retry(name = "url-service")
-    public void delete(String slug, String userId) {
+    public boolean delete(String slug, String userId) {
 
-        log.debug("ResilientUrlOps.delete userId={} slug={}", userId, slug);
+        log.debug("Deleting URL for userId: {} slug: {}", userId, slug);
 
         urlOps.delete(slug, userId);
+
+        return true;
     }
 
-    public void deleteFallback(String slug, String userId, Throwable ex) {
+    public boolean deleteFallback(String slug, String userId, Throwable ex) {
 
-        log.error("url-service CB/Retry exhausted for delete userId={} slug={}", userId, slug, ex);
+        log.error("url-service unavailable - could not delete slug: {}", slug, ex);
 
-        throw new UrlServiceUnavailableException(
-                "url-service unavailable — could not delete slug: " + slug, ex);
-    }
-
-    public static class UrlServiceUnavailableException extends RuntimeException {
-        public UrlServiceUnavailableException(String message, Throwable cause) {
-            super(message, cause);
-        }
+        return false;
     }
 }
