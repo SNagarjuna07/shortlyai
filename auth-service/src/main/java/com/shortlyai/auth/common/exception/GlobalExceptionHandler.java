@@ -64,19 +64,6 @@ public class GlobalExceptionHandler {
         return buildResponse(HttpStatus.CONFLICT, ex.getMessage(), request);
     }
 
-    // 500 — catch-all for anything unexpected
-    // Never expose internal details — log it, return generic message
-    @ExceptionHandler(Exception.class)
-    public ResponseEntity<ErrorResponse> handleGenericException(
-            Exception ex,
-            HttpServletRequest request
-    ) {
-
-        log.error("Unexpected error: {}", ex.getMessage(), ex);
-
-        return buildResponse(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred", request);
-    }
-
     // 401 - handles when user passes an invalid JWT
     @ExceptionHandler(InvalidTokenException.class)
     public ResponseEntity<ErrorResponse> handleInvalidTokenException(
@@ -108,6 +95,31 @@ public class GlobalExceptionHandler {
             HttpServletRequest request
     ) {
         return buildResponse(HttpStatus.FORBIDDEN, "Access denied", request);
+    }
+
+    // MCP-API-key not found
+    @ExceptionHandler(ApiKeyNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleApiKeyNotFound(
+            ApiKeyNotFoundException ex,
+            HttpServletRequest request
+    ) {
+
+        log.error("MCP API key not found: {}", ex.getMessage());
+
+        return buildResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
+
+    // 500 — catch-all for anything unexpected
+    // Never expose internal details — log it, return generic message
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ErrorResponse> handleGenericException(
+            Exception ex,
+            HttpServletRequest request
+    ) {
+
+        log.error("Unexpected error: {}", ex.getMessage(), ex);
+
+        return buildResponse(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred", request);
     }
 
     // DRY — single builder used by all handlers
