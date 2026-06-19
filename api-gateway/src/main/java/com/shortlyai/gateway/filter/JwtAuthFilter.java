@@ -128,7 +128,7 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
         if (path.startsWith("/oauth2/") || path.startsWith("/login/oauth2/")) return true;
 
         // MCP call
-        if (path.startsWith("/mcp")) return true;
+        if (path.equals("/mcp") || path.startsWith("/mcp/")) return true;
 
         // Short URL redirect endpoint
         return path.startsWith("/r/");

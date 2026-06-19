@@ -66,6 +66,20 @@ spring:
                     name: aiServiceCB
                     fallbackUri: forward:/fallback/ai-service
 
+            - id: mcp-server
+              uri: lb://ai-service
+              predicates:
+                - Path=/mcp, /mcp/**
+              metadata:
+                response-timeout: 35000
+                connection-timeout: 2000
+
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: aiServiceCB
+                    fallbackUri: forward:/fallback/ai-service
+
             - id: url-redirect
               uri: lb://url-service         # redirect uses same service as url
               predicates:

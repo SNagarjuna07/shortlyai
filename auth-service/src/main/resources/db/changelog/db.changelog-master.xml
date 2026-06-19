@@ -7,5 +7,6 @@
 
     <!-- Master file — import migrations in order, never reorder these -->
     <include file="classpath:db/changelog/migrations/V001__create_auth_tables.sql"/>
+    <include file="classpath:db/changelog/migrations/V002__create_api_keys.sql"/>
 
 </databaseChangeLog>

@@ -91,8 +91,34 @@ eureka:
     lease-expiration-duration-in-seconds: 30 # Eureka marks dead after 30s no heartbeat
 
 resilience4j:
+  timelimiter:
+    instances:
+      aiServiceCB: # ✅ Must match the CircuitBreaker filter name
+        timeout-duration: 30s          # ✅ Allow AI tools up to 30s
+        cancel-running-future: true    # ✅ CRITICAL: Forces HTTP connection close on timeout
   circuitbreaker:
     instances:
+      ai-service:
+        registerHealthIndicator: true
+        slidingWindowType: COUNT_BASED
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        failureRateThreshold: 50
+        slowCallDurationThreshold: 2s
+        slowCallRateThreshold: 50
+        waitDurationInOpenState: 10s
+        permittedNumberOfCallsInHalfOpenState: 3
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+        # 4xx (not found, conflict) - rethrow untouched, no fallback,
+        # doesn't count toward circuit stats
+        ignoreExceptions:
+          - org.springframework.web.client.HttpClientErrorException
+        # connection issues + 5xx - count toward circuit state, trigger fallback
+        recordExceptions:
+          - org.springframework.web.client.ResourceAccessException
+          - org.springframework.web.client.HttpServerErrorException
+        record-exceptions:
+          - java.util.concurrent.TimeoutException # ✅ Ensure timeouts count as failures
       url-service:
         registerHealthIndicator: true
         slidingWindowType: COUNT_BASED

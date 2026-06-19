@@ -111,7 +111,7 @@ public class RateLimitFilter implements GlobalFilter, Ordered {
         if (path.startsWith(apiPrefix + "/analytics"))  return "analytics";  // lenient - read-heavy
         if (path.startsWith(apiPrefix + "/ai"))         return "ai";         // very strict - expensive ops
         if (path.startsWith("/r/"))                     return "url";        // redirect = same bucket as url-service
-        if (path.startsWith("/mcp/"))                   return "mcp";
+        if (path.equals("/mcp") || path.startsWith("/mcp/"))                   return "mcp";
 
         return "default"; // catch-all - uses constructor fallback config
     }

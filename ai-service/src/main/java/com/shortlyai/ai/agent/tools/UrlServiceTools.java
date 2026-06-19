@@ -1,8 +1,7 @@
 package com.shortlyai.ai.agent.tools;
 
+import com.shortlyai.ai.operations.ResilientUrlOps;
 import com.shortlyai.ai.operations.UrlOperationsService;
-import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
-import io.github.resilience4j.retry.annotation.Retry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.model.ToolContext;
@@ -15,38 +14,30 @@ import org.springframework.stereotype.Component;
 @Slf4j
 public class UrlServiceTools {
 
-    // No RestClient here HTTP logic lives in UrlOperationsService
-    private final UrlOperationsService urlOps;
+    private final ResilientUrlOps resilientUrlOps;
 
     @Tool(description = "Shorten a long URL and return the generated short URL")
-    @CircuitBreaker(name = "url-service", fallbackMethod = "shortenUrlFallback")
-    @Retry(name = "url-service")
     public String shortenUrl(
             @ToolParam(description = "the original long URL") String originalUrl,
-            ToolContext toolContext // Spring AI injects this - not exposed to LLM
+            ToolContext toolContext
     ) {
 
         String userId = (String) toolContext.getContext().get("userId");
 
-        log.info("Tool shortenUrl userId: {}, url: {}", userId, originalUrl);
+        log.info("Tool shortenUrl userId={} url={}", userId, originalUrl);
 
-        UrlOperationsService.ShortenResult r = urlOps.shorten(originalUrl, userId);
+        UrlOperationsService.ShortenResult result = resilientUrlOps.shorten(originalUrl, userId);
 
-        log.debug("shortenUrl slug: {}, urlId: {}", r.slug(), r.id());
+        if (result == null) {
+            return "URL shortening temporarily unavailable - please try again shortly.";
+        }
 
-        return "Short URL created: %s (urlId: %d)".formatted(r.shortUrl(), r.id());
-    }
+        log.debug("shortenUrl slug={} urlId={}", result.slug(), result.id());
 
-    public String shortenUrlFallback(String originalUrl, ToolContext toolContext, Throwable ex) {
-
-        log.error("url-service unavailable for shortenUrl, url: {}", originalUrl, ex);
-
-        return "URL shortening temporarily unavailable. Try again in a moment.";
+        return "Short URL created: %s (urlId: %d)".formatted(result.shortUrl(), result.id());
     }
 
     @Tool(description = "Get details of a shortened URL by its slug")
-    @CircuitBreaker(name = "url-service", fallbackMethod = "getUrlDetailsFallback")
-    @Retry(name = "url-service")
     public String getUrlDetails(
             @ToolParam(description = "the short slug, e.g. abc123") String slug,
             ToolContext toolContext
@@ -54,26 +45,22 @@ public class UrlServiceTools {
 
         String userId = (String) toolContext.getContext().get("userId");
 
-        log.info("Tool getUrlDetails userId: {}, slug: {}", userId, slug);
+        log.info("Tool getUrlDetails userId={} slug={}", userId, slug);
 
-        UrlOperationsService.UrlDetails d = urlOps.getDetails(slug, userId);
+        UrlOperationsService.UrlDetails details = resilientUrlOps.getDetails(slug, userId);
 
-        log.debug("getUrlDetails slug: {}, clicks: {}", slug, d.clickCount());
+        if (details == null) {
+            return "Could not retrieve details for '%s' - url-service temporarily unavailable."
+                    .formatted(slug);
+        }
 
-        return "urlId: %d, Slug: %s, Original URL: %s, Clicks: %d"
-                .formatted(d.id(), d.slug(), d.originalUrl(), d.clickCount());
-    }
+        log.debug("getUrlDetails slug={} clicks={}", slug, details.clickCount());
 
-    public String getUrlDetailsFallback(String slug, ToolContext toolContext, Throwable ex) {
-
-        log.error("url-service unavailable for getUrlDetails, slug: {}", slug, ex);
-
-        return "Could not retrieve details for '%s' - url-service temporarily unavailable.".formatted(slug);
+        return "urlId: %d, slug: %s, original URL: %s, clicks: %d"
+                .formatted(details.id(), details.slug(), details.originalUrl(), details.clickCount());
     }
 
     @Tool(description = "Delete a shortened URL by its slug")
-    @CircuitBreaker(name = "url-service", fallbackMethod = "deleteUrlFallback")
-    @Retry(name = "url-service")
     public String deleteUrl(
             @ToolParam(description = "the short slug to delete") String slug,
             ToolContext toolContext
@@ -81,19 +68,19 @@ public class UrlServiceTools {
 
         String userId = (String) toolContext.getContext().get("userId");
 
-        log.warn("Tool deleteUrl userId: {}, slug: {}", userId, slug);
+        log.warn("Tool deleteUrl userId={} slug={}", userId, slug);
 
-        urlOps.delete(slug, userId);
+        try {
 
-        log.info("deleteUrl completed userId: {}, slug: {}", userId, slug);
+            resilientUrlOps.delete(slug, userId);
+
+        } catch (ResilientUrlOps.UrlServiceUnavailableException ex) {
+
+            return "Could not delete '%s' - url-service temporarily unavailable.".formatted(slug);
+        }
+
+        log.info("deleteUrl completed userId={} slug={}", userId, slug);
 
         return "Deleted URL with slug: " + slug;
-    }
-
-    public String deleteUrlFallback(String slug, ToolContext toolContext, Throwable ex) {
-
-        log.error("url-service unavailable for deleteUrl, slug: {}", slug, ex);
-
-        return "Could not delete '%s' - url-service temporarily unavailable.".formatted(slug);
     }
 }
