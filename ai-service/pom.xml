@@ -62,8 +62,11 @@
             <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
 
-        <!-- REMOVE: resilience4j-circuitbreaker, resilience4j-micrometer, spring-retry -->
-        <!-- (resilience4j-spring-boot4 brings circuitbreaker+retry+micrometer transitively) -->
+        <!-- For MCP-API-key -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
 
         <!-- Core Starter (Compatible with Boot 4) -->
         <dependency>
