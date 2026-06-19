@@ -238,6 +238,7 @@ services:
       EUREKA_URL: http://eureka-server:8761/eureka/
       URL_SERVICE_BASE_URL: http://url-service:8082         # Docker DNS, not localhost
       ANALYTICS_SERVICE_BASE_URL: http://analytics-service:8083
+      REDIS_HOST: redis        # Redis container service name
     depends_on:
       kafka:
         condition: service_healthy
