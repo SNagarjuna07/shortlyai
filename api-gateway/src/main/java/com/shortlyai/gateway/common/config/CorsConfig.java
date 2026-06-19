@@ -28,7 +28,7 @@ public class CorsConfig {
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
 
         // X-Trace-Id — let clients read the trace ID from responses (useful for debugging)
-        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Trace-Id"));
+        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Trace-Id", "X-MCP-Key"));
 
         // headers
         config.setExposedHeaders(List.of(
