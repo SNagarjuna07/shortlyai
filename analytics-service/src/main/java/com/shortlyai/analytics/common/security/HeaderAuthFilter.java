@@ -26,8 +26,11 @@ public class HeaderAuthFilter extends OncePerRequestFilter {
             FilterChain filterChain
     ) throws ServletException, IOException {
 
-        // No need of ID for actuators
-        if (request.getRequestURI().contains("/actuator")) {
+        // No need of ID for actuators and Swagger
+        if (request.getRequestURI().contains("/actuator")
+                || request.getRequestURI().contains("/swagger")
+                || request.getRequestURI().contains("/v3")
+        ) {
             filterChain.doFilter(request, response);
             return;
         }
