@@ -2,6 +2,8 @@ package com.shortlyai.ai.classification;
 
 import com.shortlyai.ai.classification.dto.ClassificationRequest;
 import com.shortlyai.ai.classification.dto.ClassificationResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -12,10 +14,15 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("${api.prefix}/ai/classify")
 @RequiredArgsConstructor
+@Tag(name = "Classification Controller")
 public class ClassificationController {
 
     private final ClassificationService classificationService;
 
+    @Operation(
+            summary = "Classify URLs",
+            description = "The AI agent classifies the URL into a category such as tech, finance etc."
+    )
     @PostMapping
     public ClassificationResponse classify(
             @Valid @RequestBody ClassificationRequest request

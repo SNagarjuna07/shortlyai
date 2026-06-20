@@ -1,16 +1,23 @@
 package com.shortlyai.ai.summary;
 
 import com.shortlyai.ai.summary.dto.SummaryResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("${api.prefix}/ai/summary")
 @RequiredArgsConstructor
+@Tag(name = "Summary Controller")
 public class SummaryController {
 
     private final SummaryService summaryService;
 
+    @Operation(
+            summary = "Summarize URLs",
+            description = "The AI agent gets the URL's stats and generates a summary of number of clicks, its tag etc"
+    )
     @GetMapping("/{urlId}")
     public SummaryResponse summarize(
             @PathVariable Long urlId,
