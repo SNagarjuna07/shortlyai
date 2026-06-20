@@ -66,7 +66,11 @@ public class CacheWarmingJob {
             mostActiveUrls.forEach(url ->
                     stringRedisTemplate.opsForValue().set(
                             "url:" + url.getSlug(),
-                            url.getId() + "|" + url.getOriginalUrl(),
+                            url.getId() +
+                                    "|" +
+                                    url.getOriginalUrl() +
+                                    "|" +
+                                    url.getUserId(),
                             Duration.ofSeconds(ttl)
                     )
             );

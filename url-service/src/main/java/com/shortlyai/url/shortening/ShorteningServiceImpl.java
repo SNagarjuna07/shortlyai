@@ -15,14 +15,12 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
-import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.NoSuchElementException;
 import java.util.UUID;
 
 @Service
@@ -134,7 +132,11 @@ public class ShorteningServiceImpl implements ShorteningService {
         // Cache slug -> original URL in Redis
         stringRedisTemplate.opsForValue().set(
                 CACHE_PREFIX + savedUrl.getSlug(),
-                savedUrl.getId() + "|" + savedUrl.getOriginalUrl(), // <- urlId|url
+                savedUrl.getId() +
+                        "|" +
+                        savedUrl.getOriginalUrl() +
+                        "|" +
+                        savedUrl.getUserId(), // <- urlId|url|userId
                 Duration.ofSeconds(cacheTtlSeconds)
         );
 
@@ -164,14 +166,16 @@ public class ShorteningServiceImpl implements ShorteningService {
             log.info("Cache hit for slug: {}", slug);
 
             // parse the url which contains id, if Redis is hit there will no id
-            String[] parts = cached.split("\\|", 2); // \\| splits 1st |
+            String[] parts = cached.split("\\|", 3); // \\| splits 1st |
 
             Long urlId = Long.parseLong(parts[0]);
 
             String originalUrl = parts[1];
 
+            UUID userId = UUID.fromString(parts[2]);
+
             // publish click also on cache hit
-            publishClickEvent(urlId, slug, request);
+            publishClickEvent(urlId, slug, userId, request);
 
             // Increment click counter in DB
             urlRepository.incrementClickCount(urlId);
@@ -191,12 +195,16 @@ public class ShorteningServiceImpl implements ShorteningService {
         // save to REDIS
         stringRedisTemplate.opsForValue().set(
                 CACHE_PREFIX + slug,
-                shortUrl.getId() + "|" + shortUrl.getOriginalUrl(), // <- same format
+                shortUrl.getId() +
+                        "|" +
+                        shortUrl.getOriginalUrl() +
+                        "|" +
+                        shortUrl.getUserId(), // <- same format
                 Duration.ofSeconds(cacheTtlSeconds)
         );
 
         // publish Kafka async
-        publishClickEvent(shortUrl.getId(), slug, request);
+        publishClickEvent(shortUrl.getId(), slug, shortUrl.getUserId(), request);
 
         // Increment the click count in DB
         urlRepository.incrementClickCount(shortUrl.getId());
@@ -353,16 +361,18 @@ public class ShorteningServiceImpl implements ShorteningService {
                 });
     }
 
-    private void publishClickEvent(Long urlId, String slug, HttpServletRequest request) {
+    private void publishClickEvent(Long urlId, String slug, UUID ownerId, HttpServletRequest request) {
 
         String ipHash = sha256(request.getRemoteAddr());
 
         UrlClickedEvent event = new UrlClickedEvent(
-                urlId, slug,
+                urlId,
+                slug,
                 request.getHeader("User-Agent"),
                 ipHash,
                 request.getHeader("Referer"),
-                Instant.now()
+                Instant.now(),
+                ownerId
         );
 
         kafkaTemplate.send(urlClickedTopic, slug, event)
