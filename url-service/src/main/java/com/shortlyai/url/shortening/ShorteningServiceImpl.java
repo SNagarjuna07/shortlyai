@@ -110,8 +110,14 @@ public class ShorteningServiceImpl implements ShorteningService {
         // Set custom slug if provided else temp slug so DataIntegrityViolationException does not occur
         if (isCustom) {
             url.setSlug(request.customSlug());
+
         } else {
-            url.setSlug("temp-" + (System.nanoTime() % 100000000000L)); // keep under 20 chars
+
+            url.setSlug("tmp" + java.util.UUID.randomUUID()
+                    .toString()
+                    .replace("-", "")
+                    .substring(0, 16)
+            );
         }
 
         // First save to generate database ID
@@ -119,7 +125,9 @@ public class ShorteningServiceImpl implements ShorteningService {
 
         // Generate Base62 slug from ID if custom slug was not provided
         if (!isCustom) {
+
             savedUrl.setSlug(Base62.encode(savedUrl.getId()));
+
             savedUrl = urlRepository.save(savedUrl);
         }
 
