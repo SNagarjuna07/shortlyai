@@ -6,6 +6,10 @@ import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 @Component
@@ -33,13 +37,24 @@ public class RealTimeCleanupJob {
             return;
         }
 
-        // Filter keys whose value is "0" - initialized but never clicked
-        Set<String> keysToDelete = keys
-                .stream()
-                .filter(key -> "0".equals(stringRedisTemplate.opsForValue().get(key)))
-                .collect(java.util.stream.Collectors.toSet());
+        List<String> keyList = new ArrayList<>(keys);
 
-        // No key is present whose value is 0
+        List<String> values = stringRedisTemplate
+                .opsForValue()
+                .multiGet(keyList);
+
+        Set<String> keysToDelete = new HashSet<>();
+
+        // Filter keys whose value is "0" - initialized but never clicked
+        for (int i = 0; i < keyList.size(); i++) {
+
+            if ("0".equals(values.get(i))) {
+
+                keysToDelete.add(keyList.get(i));
+            }
+        }
+
+        // No key (URL) found with 0 clicks
         if (keysToDelete.isEmpty()) {
 
             log.info("No zero-count keys to clean up");
