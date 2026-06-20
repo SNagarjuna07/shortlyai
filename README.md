@@ -1,13 +1,17 @@
 # 🔗 ShortlyAI
 
-**A production-grade URL shortener built as a Java 25 / Spring Boot 4 microservices platform, with a built-in AI agent you can just *talk* to.**
+**A production-grade URL shortener built as a Java 25 / Spring Boot 4 microservices platform - with a built-in AI agent you can just *talk* to, and an MCP server so Claude can manage your links directly.**
 
 > Most URL shortener projects are a single Spring Boot app with one table.
-> This one is six independently deployable services with service discovery, circuit breakers, a full observability stack, and an LLM-powered ReAct agent that can shorten, inspect, analyze, and delete your links through plain English - all spun up with a single `docker compose up`.
+> This one is six independently deployable services with service discovery, circuit breakers, a full observability stack, an LLM-powered ReAct agent that can shorten, inspect, analyze, and delete your links through plain English, and a native MCP server so Claude Desktop can do the same - all spun up with a single `docker compose up`.
+
+⭐ **If this saves you a weekend of wiring microservices together, a star helps a lot  and tells me to keep building.**
 
 ![Java](https://img.shields.io/badge/Java-25-ED8B00?style=flat-square&logo=openjdk&logoColor=white)
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.0-6DB33F?style=flat-square&logo=springboot&logoColor=white)
 ![Spring AI](https://img.shields.io/badge/Spring%20AI-ReAct%20Agent-6DB33F?style=flat-square&logo=spring&logoColor=white)
+![MCP](https://img.shields.io/badge/MCP-Server-7C3AED?style=flat-square)
+![OpenAPI](https://img.shields.io/badge/OpenAPI-Swagger%20UI-85EA2D?style=flat-square&logo=swagger&logoColor=black)
 ![Spring Cloud](https://img.shields.io/badge/Spring%20Cloud-Eureka%20%2B%20Gateway-6DB33F?style=flat-square&logo=spring&logoColor=white)
 ![Resilience4j](https://img.shields.io/badge/Resilience4j-Circuit%20Breaker-FF6B00?style=flat-square)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?style=flat-square&logo=postgresql&logoColor=white)
@@ -54,6 +58,52 @@ Try also:
 
 ---
 
+## 🔌 Use it from Claude Desktop (MCP)
+
+`ai-service` doubles as a native **[MCP](https://modelcontextprotocol.io) server** — point Claude Desktop at it and manage your shortened URLs without leaving the chat window.
+
+**1. Generate an API key** (one-time, via auth-service):
+
+```
+POST /api/v1/auth/apikeys
+Authorization: Bearer <your JWT>
+{ "name": "Claude Desktop" }
+```
+
+You'll get back a `sk_...` key — copy it immediately, it's shown exactly once.
+
+**2. Wire it into Claude Desktop's config:**
+
+```jsonc
+{
+  "mcpServers": {
+    "shortlyai": {
+      "command": "npx",
+      "args": [
+        "mcp-remote@latest",
+        "https://your-domain.com/mcp",
+        "--header", "X-MCP-Key: sk_your_key_here"
+      ]
+    }
+  }
+}
+```
+> On Windows, wrap the command as `"cmd"` / `["/c", "npx", ...]`.
+
+**3. Tools exposed to Claude:**
+
+| Tool | What it does |
+|---|---|
+| `mcp_shortenUrl` | Shorten a long URL, return the short link + numeric ID |
+| `mcp_getUrlDetails` | Look up a URL's original destination + click count by slug |
+| `mcp_deleteUrl` | Permanently delete a shortened URL (Claude confirms before calling) |
+| `mcp_getUrlStats` | Click count for a specific URL by ID |
+| `mcp_getTopUrls` | Your top-performing links by click count |
+
+Auth is API-key based (SHA-256 hashed, validated against Redis on every call) rather than JWT — MCP connections are long-lived and tokens shouldn't expire mid-session. Every tool call is circuit-breaker protected against the same `url-service`/`analytics-service` dependencies the chat agent uses.
+
+---
+
 ## 🏗️ Architecture
 
 ```mermaid
@@ -66,17 +116,19 @@ graph TB
         Auth["auth-service :8081<br/>JWT + OAuth2 + Refresh tokens"]
         Url["url-service :8082<br/>Shortening • Base62 • Redirects"]
         Analytics["analytics-service :8083<br/>Click tracking • Bloom filter"]
-        AI["ai-service :8084<br/>ReAct agent • Classification • Safety"]
+        AI["ai-service :8084<br/>ReAct agent • MCP server • Classification • Safety"]
     end
 
     PG1[("Postgres<br/>shortlyai_auth")]
     PG2[("Postgres<br/>shortlyai_urls")]
     PG3[("Postgres<br/>shortlyai_analytics")]
-    RedisDB[("Redis 7<br/>cache • rate limit • bloom filter")]
+    RedisDB[("Redis 7<br/>cache • rate limit • bloom filter • API keys")]
     Kafka{{"Apache Kafka"}}
     Obs["Prometheus + Grafana<br/>metrics & dashboards"]
+    MCP[("Claude Desktop<br/>via MCP")]
 
     Client --> Gateway
+    MCP -. "X-MCP-Key" .-> AI
 
     Gateway -. discovers .-> Eureka
     Auth -. registers .-> Eureka
@@ -128,11 +180,12 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-That's it - **15 containers**, fully wired:
+That's it — **15 containers**, fully wired:
 
 | What | URL |
 |---|---|
 | API Gateway (entry point) | http://localhost:8080 |
+| **Swagger UI (all services, one page)** | http://localhost:8080/swagger-ui.html |
 | Eureka dashboard | http://localhost:8761 |
 | Grafana (dashboards) | http://localhost:3000 (`admin` / `admin`) |
 | Prometheus | http://localhost:9090 |
@@ -142,19 +195,37 @@ All 6 services build from multi-stage Dockerfiles (`eclipse-temurin:25-jdk` → 
 
 ---
 
+## 📘 API Docs (Swagger / OpenAPI)
+
+Every service ships full OpenAPI 3.1 docs via [springdoc-openapi](https://springdoc.org/), aggregated into a single Swagger UI at the gateway:
+
+| Service | Swagger UI |
+|---|---|
+| **Gateway — aggregated, all services** | http://localhost:8080/swagger-ui.html |
+| Auth Service | http://localhost:8081/swagger-ui.html |
+| URL Service | http://localhost:8082/swagger-ui.html |
+| Analytics Service | http://localhost:8083/swagger-ui.html |
+| AI Service | http://localhost:8084/swagger-ui.html |
+
+The gateway page is the one to share — it proxies each service's `/v3/api-docs` through Eureka-resolved load-balanced routes, so it's the single front door for exploring and testing the entire API surface, same as how real client traffic flows.
+
+---
+
 ## ✨ Key Features
 
 | Category | What's implemented |
 |---|---|
 | **AI / LLM** | ReAct agent (Spring AI + tool calling), AI URL classification (title, category, safety), AI slug suggestions, AI-generated analytics summaries |
-| **Auth & Security** | JWT access/refresh tokens, OAuth2 Google login, BCrypt password hashing, email verification, audit logging, header-based service-to-service auth |
+| **MCP** | Native MCP server (`STREAMABLE` transport) exposing URL/analytics tools to Claude Desktop, hashed API-key auth, circuit-breaker-protected tool calls |
+| **API Docs** | OpenAPI 3.1 on every service via springdoc, aggregated single Swagger UI at the gateway |
+| **Auth & Security** | JWT access/refresh tokens, OAuth2 Google login, BCrypt password hashing, email verification, audit logging, header-based service-to-service auth enforced independently on every service |
 | **URL Shortening** | Base62 encoding, custom slugs, expiry dates, cache-aside Redis caching for sub-millisecond redirects |
-| **Analytics** | Real-time click counters (Redis), hourly rollups, Bloom-filter click deduplication, top-URLs leaderboard |
+| **Analytics** | Real-time click counters (Redis), hourly rollups, Bloom-filter click deduplication, per-user top-URLs leaderboard |
 | **Service Discovery** | Netflix Eureka — all 5 business services self-register; gateway routes via `lb://` for dynamic load balancing |
-| **Resilience** | Resilience4j circuit breakers + retries on every cross-service call (gateway → all services, AI agent → url/analytics), with custom fallbacks; DLQ + scheduled retry for failed Kafka publishes |
+| **Resilience** | Resilience4j circuit breakers + retries on every cross-service call (gateway → all services, AI agent → url/analytics, MCP tools → url/analytics), with custom fallbacks; DLQ + scheduled retry for failed Kafka publishes |
 | **Distributed Jobs** | ShedLock-coordinated scheduled jobs (expiry cleanup, cache warming, DLQ retry, token cleanup) — safe across multiple instances |
-| **Gateway** | Spring Cloud Gateway (WebFlux) — central JWT validation, Redis token-bucket rate limiting, per-route circuit breakers, CORS, trace ID propagation |
-| **Observability** | Custom 7-panel Grafana dashboard (request rate, latency, JVM heap/threads, GC pauses, error rate, circuit breaker state), Prometheus metrics across all 6 services, structured JSON logging (Logback + Logstash encoder), MDC trace IDs, Loki/Promtail log aggregation (WIP) |
+| **Gateway** | Spring Cloud Gateway (WebFlux) — central JWT validation, Redis token-bucket rate limiting, per-route circuit breakers, CORS, trace ID propagation, aggregated OpenAPI docs |
+| **Observability** | Custom Grafana dashboard (request rate, latency, JVM heap/threads, GC pauses, error rate, circuit breaker state), Prometheus metrics across all 6 services, structured JSON logging (Logback + Logstash encoder), MDC trace IDs, Loki/Promtail log aggregation (WIP) |
 | **Modern Java** | Java 25, virtual threads, records for all DTOs/events, sealed types, text blocks for SQL/prompts |
 
 ---
@@ -165,8 +236,7 @@ Every service exposes `/actuator/prometheus`. The included **Grafana dashboard**
 
 1. **HTTP request rate** — traffic per service
 2. **Average latency** — per-service response times
-
-Resilience4j circuit breaker state (`CLOSED` / `OPEN` / `HALF_OPEN`) is also exported as a Prometheus metric per downstream dependency.
+3. **Circuit breaker state** — `CLOSED` / `OPEN` / `HALF_OPEN` per downstream dependency, exported as a Prometheus metric
 
 ---
 
@@ -174,8 +244,8 @@ Resilience4j circuit breaker state (`CLOSED` / `OPEN` / `HALF_OPEN`) is also exp
 
 Two layers of circuit breakers, both Resilience4j, both Spring Boot 4 native:
 
-- **`ai-service` → `url-service` / `analytics-service`** — `resilience4j-spring-boot4` with declarative `@CircuitBreaker` + `@Retry` annotations on every `@Tool` method the ReAct agent uses. 4xx responses (e.g. "URL not found") pass through untouched; connection failures and 5xx trip the breaker and trigger a friendly fallback the agent relays in plain English.
-- **`api-gateway` → all 4 downstream services** — declarative `CircuitBreaker` route filters per service, with a dedicated `FallbackController` returning structured `503` JSON instead of hangs or raw stack traces.
+- **`ai-service` → `url-service` / `analytics-service`** — MCP tool methods decorate `CircuitBreaker`/`Retry` programmatically against the shared registry rather than relying solely on annotations, guaranteeing resilience fires regardless of how the MCP framework invokes the underlying bean. 4xx responses (e.g. "URL not found") pass through untouched; connection failures and 5xx trip the breaker and trigger a friendly fallback the agent relays in plain English.
+- **`api-gateway` → all 4 downstream services** — declarative `CircuitBreaker` route filters per service, with per-service-tuned thresholds (LLM-backed `ai-service` gets longer slow-call/timeout windows than CRUD services) and a dedicated `FallbackController` returning structured `503` JSON instead of hangs or raw stack traces.
 
 ---
 
@@ -186,7 +256,8 @@ Two layers of circuit breakers, both Resilience4j, both Spring Boot 4 native:
 | Language / Runtime | Java 25 (virtual threads enabled) |
 | Framework | Spring Boot 4, Spring Cloud Gateway, Spring Security 7 |
 | Service Discovery | Netflix Eureka (Spring Cloud) |
-| AI | Spring AI 2.0, ReAct tool-calling agent, OpenAI-compatible LLM (Groq) |
+| AI | Spring AI 2.0, ReAct tool-calling agent, MCP server, OpenAI-compatible LLM (Groq) |
+| API Docs | springdoc-openapi 3 (OpenAPI 3.1, Swagger UI, gateway-aggregated) |
 | Database | PostgreSQL 16 + Liquibase migrations |
 | Cache / Rate Limiting | Redis 7 (RedisBloom module) |
 | Messaging | Apache Kafka |
@@ -203,11 +274,11 @@ Two layers of circuit breakers, both Resilience4j, both Spring Boot 4 native:
 | Service | Port | Responsibility |
 |---|---|---|
 | `eureka-server` | 8761 | Service registry — all 5 services below register here |
-| `api-gateway` | 8080 | Single entry point — JWT validation, rate limiting, circuit breakers, routing, CORS |
-| `auth-service` | 8081 | Registration, login, JWT/refresh tokens, OAuth2 Google, email verification |
+| `api-gateway` | 8080 | Single entry point — JWT validation, rate limiting, circuit breakers, routing, CORS, aggregated Swagger UI |
+| `auth-service` | 8081 | Registration, login, JWT/refresh tokens, OAuth2 Google, email verification, MCP API keys |
 | `url-service` | 8082 | URL shortening, Base62 slugs, redirects, cache-aside Redis, Kafka event publishing |
 | `analytics-service` | 8083 | Kafka consumer for click events, Bloom-filter dedup, real-time + hourly analytics |
-| `ai-service` | 8084 | ReAct agent, AI URL classification, slug suggestions, safety checks, summaries |
+| `ai-service` | 8084 | ReAct agent, MCP server, AI URL classification, slug suggestions, safety checks, summaries |
 
 ---
 
@@ -220,8 +291,8 @@ shortlyai/
 ├── promtail-config.yml
 ├── grafana/provisioning/   # auto-provisioned datasource + dashboard
 ├── eureka-server/          # Spring Cloud Netflix Eureka registry
-├── api-gateway/            # Spring Cloud Gateway — routing, auth, rate limiting, circuit breakers
-├── auth-service/           # JWT + OAuth2 + refresh tokens
+├── api-gateway/            # Spring Cloud Gateway — routing, auth, rate limiting, circuit breakers, Swagger aggregation
+├── auth-service/           # JWT + OAuth2 + refresh tokens + MCP API keys
 ├── url-service/            # Shortening, redirects, Kafka events, DLQ
 │   └── src/main/java/com/shortlyai/url/
 │       ├── shortening/    # Base62, core CRUD
@@ -231,9 +302,10 @@ shortlyai/
 │       ├── dlq/            # Dead-letter-queue retry
 │       └── events/         # Kafka event records
 ├── analytics-service/    # Click tracking, Bloom filter, rollups
-├── ai-service/           # ReAct agent + AI classification/slug/safety/summary
+├── ai-service/           # ReAct agent + MCP server + AI classification/slug/safety/summary
 │   └── src/main/java/com/shortlyai/ai/
 │       ├── agent/          # ChatClient + @Tool methods (circuit-breaker protected)
+│       ├── mcp/             # MCP server tools + API key auth filter
 │       ├── classification/ # AI title/category/safety pipeline
 │       ├── slug/           # AI slug suggestions
 │       ├── safety/         # Phishing/scam URL analysis
@@ -248,16 +320,18 @@ Every service follows **feature-based packaging** (not layer-based) — each fea
 ## 🗺️ Project Status
 
 - [x] `eureka-server` — service discovery for all 5 business services
-- [x] `auth-service` — JWT, OAuth2 Google, refresh tokens, audit logging
+- [x] `auth-service` — JWT, OAuth2 Google, refresh tokens, audit logging, MCP API keys
 - [x] `url-service` — shortening, redirects, cache-aside, Kafka events, DLQ retry
-- [x] `analytics-service` — click tracking, Bloom filter dedup, hourly rollups
-- [x] `api-gateway` — JWT validation, rate limiting, routing, CORS, circuit breakers
+- [x] `analytics-service` — click tracking, Bloom filter dedup, hourly rollups, per-user leaderboard
+- [x] `api-gateway` — JWT validation, rate limiting, routing, CORS, circuit breakers, aggregated Swagger UI
 - [x] `ai-service` — ReAct agent, AI classification pipeline, slug/safety/summary endpoints
+- [x] MCP server — tested end-to-end with Claude Desktop via `mcp-remote`
+- [x] OpenAPI / Swagger UI — every service, aggregated at the gateway
 - [x] Full Docker containerization — 6 services + Postgres/Redis/Kafka/Eureka, single `docker compose up`
-- [x] Observability — Prometheus + custom Grafana dashboard (7 panels)
-- [x] Resilience4j circuit breakers — gateway-level + AI-agent-level, with fallbacks
+- [x] Observability — Prometheus + custom Grafana dashboard
+- [x] Resilience4j circuit breakers — gateway-level + AI-agent-level + MCP-level, with fallbacks
 - [ ] Per-tier rate limiting (FREE/PRO/ADMIN)
-- [ ] MCP server exposure for ShortlyAI tools
+- [ ] OAuth2 authorization server for claude.ai custom connectors (Claude Desktop works today via API key; browser-based connectors need a proper auth server + public HTTPS)
 
 ---
 
@@ -267,20 +341,21 @@ A few things this project specifically exercises that a typical CRUD app doesn't
 
 - **Event-driven SAGA choreography** — URL creation triggers a chain of independent Kafka consumers (analytics initialization, AI classification, result persistence) with no central orchestrator
 - **Cross-service contract discipline** — every Kafka event and REST DTO is a Java record; field-name mismatches across service boundaries are a real, recurring class of bug this project surfaced and fixed
-- **AI as a tool-calling orchestrator, not a black box** — the LLM never touches infrastructure directly; it calls typed `@Tool` methods that hit real microservices, with `ToolContext` keeping user identity out of the LLM's hands entirely
-- **Resilient AI agent** — every tool call is circuit-breaker + retry protected; a downstream outage degrades to a friendly conversational message instead of a stack trace
-- **Defense-in-depth auth** — gateway validates JWTs once, but each downstream service independently validates the `X-User-Id` header it receives, so services remain safe even if called directly
+- **AI as a tool-calling orchestrator, not a black box** — the LLM never touches infrastructure directly; it calls typed `@Tool` methods that hit real microservices, with `ToolContext` (chat agent) and a `ThreadLocal`-scoped security context (MCP) keeping user identity completely out of the LLM's hands
+- **Resilient AI agent and MCP server** — every tool call is circuit-breaker + retry protected, decorated programmatically where annotation-based AOP can't be guaranteed to fire (framework-invoked tool methods); a downstream outage degrades to a friendly conversational message instead of a stack trace
+- **Defense-in-depth auth** — gateway validates JWTs once, but every downstream service independently validates the `X-User-Id` header it receives and rejects requests without it, so no service is an open door even if reached directly, bypassing the gateway
 - **Guaranteed delivery without a message broker DLQ** — failed Kafka publishes are persisted to a Postgres `failed_events` table and retried on a ShedLock-coordinated schedule, surviving broker outages
+- **Single front door for API discovery** — OpenAPI specs from all 5 services aggregated through gateway routes resolved via Eureka, instead of five disconnected `localhost:port` Swagger pages
 - **One-command full-stack deployment** — 6 custom-built microservice images + 9 infrastructure/observability containers, all networked via Docker Compose with service-discovery-aware routing
 
 ---
 
 ## 📄 License
 
-MIT - see [LICENSE](LICENSE)
+MIT — see [LICENSE](LICENSE)
 
 ## 👤 Author
 
 Built by **S Nagarjuna** as a portfolio project.
 
-⭐ If you found this useful or interesting, consider starring the repo!
+⭐ **Found this useful, interesting, or just well over-engineered for a URL shortener? Star the repo — it genuinely helps and costs you two seconds.**
