@@ -8,6 +8,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpClientErrorException;
+
 import java.util.List;
 
 @Component
@@ -44,9 +46,19 @@ public class McpAnalyticsTools {
 
         log.info("MCP getUrlStats userId: {}, urlId: {}", userId, urlId);
 
-        AnalyticsOperationsService.StatsResult stats = analyticsOps.getStats(urlId, userId);
+        try {
 
-        return "URL with ID %d has %d total clicks".formatted(stats.urlId(), stats.totalClicks());
+            AnalyticsOperationsService.StatsResult stats = analyticsOps.getStats(urlId, userId);
+
+            return "URL with ID %d has %d total clicks".formatted(stats.urlId(), stats.totalClicks());
+
+        } catch (HttpClientErrorException e) {
+
+            // 404 = urlId not found in analytics-service - server healthy, don't trip CB
+            log.warn("MCP getUrlStats 4xx userId: {}, urlId: {}, status: {}", userId, urlId, e.getStatusCode());
+
+            return "Could not retrieve stats for URL %d: %s".formatted(urlId, e.getStatusText());
+        }
     }
 
     public String getUrlStatsFallback(Long urlId, Throwable ex) {
@@ -56,7 +68,7 @@ public class McpAnalyticsTools {
         return "Click stats for URL %d temporarily unavailable.".formatted(urlId);
     }
 
-    @Tool(name = "mcp_getTopUrls", description = "Get the user's top performing shortened URLs ranked by click count.")
+    @Tool(name = "mcp_getTopUrls", description = "Get the top performing shortened URLs ranked by click count.")
     @CircuitBreaker(name = "analytics-service", fallbackMethod = "getTopUrlsFallback")
     @Retry(name = "analytics-service")
     public String getTopUrls(
@@ -67,15 +79,29 @@ public class McpAnalyticsTools {
 
         log.info("MCP getTopUrls userId: {}, limit: {}", userId, limit);
 
-        List<AnalyticsOperationsService.TopUrlResult> topUrls = analyticsOps.getTopUrls(limit, userId);
+        try {
 
-        StringBuilder sb = new StringBuilder("Top %d URLs:\n".formatted(topUrls.size()));
+            List<AnalyticsOperationsService.TopUrlResult> topUrls = analyticsOps.getTopUrls(limit, userId);
 
-        for (AnalyticsOperationsService.TopUrlResult url : topUrls) {
-            sb.append("- urlId %d: %d clicks\n".formatted(url.urlId(), url.clickCount()));
+            if (topUrls.isEmpty()) {
+                return "No URLs found.";
+            }
+
+            StringBuilder sb = new StringBuilder("Top %d URLs:\n".formatted(topUrls.size()));
+
+            for (AnalyticsOperationsService.TopUrlResult url : topUrls) {
+                sb.append("- urlId %d: %d clicks\n".formatted(url.urlId(), url.clickCount()));
+            }
+
+            return sb.toString();
+
+        } catch (HttpClientErrorException e) {
+
+            // 4xx from analytics-service - server healthy, don't trip CB
+            log.warn("MCP getTopUrls 4xx userId: {}, limit: {}, status: {}", userId, limit, e.getStatusCode());
+
+            return "Could not retrieve top URLs: %s".formatted(e.getStatusText());
         }
-
-        return sb.toString();
     }
 
     public String getTopUrlsFallback(int limit, Throwable ex) {

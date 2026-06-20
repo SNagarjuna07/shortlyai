@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpClientErrorException;
 
 @Component
 @RequiredArgsConstructor
@@ -44,11 +45,21 @@ public class McpUrlTools {
 
         log.info("MCP shortenUrl userId: {}, url: {}", userId, originalUrl);
 
-        UrlOperationsService.ShortenResult r = urlOps.shorten(originalUrl, userId);
+        try {
 
-        log.debug("MCP shortenUrl slug: {}, id: {}", r.slug(), r.id());
+            UrlOperationsService.ShortenResult r = urlOps.shorten(originalUrl, userId);
 
-        return "Short URL created: %s (urlId: %d, slug: %s)".formatted(r.shortUrl(), r.id(), r.slug());
+            log.debug("MCP shortenUrl slug: {}, id: {}", r.slug(), r.id());
+
+            return "Short URL created: %s (urlId: %d, slug: %s)".formatted(r.shortUrl(), r.id(), r.slug());
+
+        } catch (HttpClientErrorException e) {
+
+            // 4xx = client error (invalid URL format, bad request) - server is healthy, don't trip CB
+            log.warn("MCP shortenUrl 4xx for userId: {}, url: {}, status: {}", userId, originalUrl, e.getStatusCode());
+
+            return "Could not shorten URL: %s (%s)".formatted(originalUrl, e.getStatusText());
+        }
     }
 
     public String shortenUrlFallback(String originalUrl, Throwable ex) {
@@ -72,10 +83,20 @@ public class McpUrlTools {
 
         log.info("MCP getUrlDetails userId: {}, slug: {}", userId, slug);
 
-        UrlOperationsService.UrlDetails d = urlOps.getDetails(slug, userId);
+        try {
 
-        return "urlId: %d | slug: %s | original: %s | short: %s | clicks: %d"
-                .formatted(d.id(), d.slug(), d.originalUrl(), d.shortUrl(), d.clickCount());
+            UrlOperationsService.UrlDetails d = urlOps.getDetails(slug, userId);
+
+            return "urlId: %d | slug: %s | original: %s | short: %s | clicks: %d"
+                    .formatted(d.id(), d.slug(), d.originalUrl(), d.shortUrl(), d.clickCount());
+
+        } catch (HttpClientErrorException e) {
+
+            // 404 = slug not found, 403 = not owned by this user
+            log.warn("MCP getUrlDetails 4xx userId: {}, slug: {}, status: {}", userId, slug, e.getStatusCode());
+
+            return "Could not retrieve details for '%s': %s".formatted(slug, e.getStatusText());
+        }
     }
 
     public String getUrlDetailsFallback(String slug, Throwable ex) {
@@ -99,11 +120,21 @@ public class McpUrlTools {
 
         log.warn("MCP deleteUrl userId: {}, slug: {}", userId, slug);
 
-        urlOps.delete(slug, userId);
+        try {
 
-        log.info("MCP deleteUrl completed userId: {}, slug: {}", userId, slug);
+            urlOps.delete(slug, userId);
 
-        return "Deleted URL with slug: " + slug;
+            log.info("MCP deleteUrl completed userId: {}, slug: {}", userId, slug);
+
+            return "Deleted URL with slug: " + slug;
+
+        } catch (HttpClientErrorException e) {
+
+            // 404 = slug not found, 403 = not owned by this user - server healthy, don't trip CB
+            log.warn("MCP deleteUrl 4xx userId: {}, slug: {}, status: {}", userId, slug, e.getStatusCode());
+
+            return "Could not delete '%s': %s".formatted(slug, e.getStatusText());
+        }
     }
 
     public String deleteUrlFallback(String slug, Throwable ex) {
