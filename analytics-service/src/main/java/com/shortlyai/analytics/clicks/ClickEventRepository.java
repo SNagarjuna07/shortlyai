@@ -8,6 +8,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 
 public interface ClickEventRepository extends JpaRepository<ClickEvent, Long> {
 
@@ -47,10 +48,11 @@ public interface ClickEventRepository extends JpaRepository<ClickEvent, Long> {
     // Pageable controls the limit e.g. PageRequest.of(0, 10) = top 10
     // Constructor expression maps result directly to TopUrlResponse record
     @Query("""
-            SELECT new com.shortlyai.analytics.clicks.TopUrlResponse(c.urlId, COUNT(c))
-            FROM ClickEvent c
-            GROUP BY c.urlId
-            ORDER BY COUNT(c) DESC
-            """)
-    List<TopUrlResponse> findTopUrls(Pageable pageable);
+        SELECT new com.shortlyai.analytics.clicks.TopUrlResponse(c.urlId, COUNT(c))
+        FROM ClickEvent c
+        WHERE c.userId = :userId
+        GROUP BY c.urlId
+        ORDER BY COUNT(c) DESC
+        """)
+    List<TopUrlResponse> findTopUrlsByUserId(@Param("userId") UUID userId, Pageable pageable);
 }

@@ -37,10 +37,13 @@ public class ClickEvent {
     @Column(name = "clicked_at", nullable = false)
     private Instant clickedAt;
 
-    // JPA requires a no-arg constructor — keep it protected so nothing else uses it
+    @Column(name = "user_id")
+    private java.util.UUID userId;
+
+    // JPA requires a no-arg constructor - keep it protected so nothing else uses it
     protected ClickEvent() {}
 
-    // Factory method — creates entity from Kafka event
+    // Factory method - creates entity from Kafka event
     public static ClickEvent from(
             com.shortlyai.analytics.events.UrlClickedEvent event) {
         ClickEvent e = new ClickEvent();
@@ -52,6 +55,7 @@ public class ClickEvent {
         e.country   = event.country();
         e.city      = event.city();
         e.clickedAt = event.clickedAt() != null ? event.clickedAt() : Instant.now();
+        e.userId = event.userId();
         return e;
     }
 }
