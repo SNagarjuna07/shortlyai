@@ -100,9 +100,10 @@ eureka:
 resilience4j:
   timelimiter:
     instances:
-      aiServiceCB: # ✅ Must match the CircuitBreaker filter name
-        timeout-duration: 30s          # ✅ Allow AI tools up to 30s
-        cancel-running-future: true    # ✅ CRITICAL: Forces HTTP connection close on timeout
+      url-service:
+        timeout-duration: 30s
+        cancel-running-future: true
+
   circuitbreaker:
     instances:
       ai-service:
@@ -124,8 +125,8 @@ resilience4j:
         recordExceptions:
           - org.springframework.web.client.ResourceAccessException
           - org.springframework.web.client.HttpServerErrorException
-        record-exceptions:
-          - java.util.concurrent.TimeoutException # ✅ Ensure timeouts count as failures
+          - java.util.concurrent.TimeoutException
+
       url-service:
         registerHealthIndicator: true
         slidingWindowType: COUNT_BASED
@@ -176,3 +177,17 @@ resilience4j:
         retryExceptions:
           - org.springframework.web.client.ResourceAccessException
           - org.springframework.web.client.HttpServerErrorException
+      ai-service:
+        maxAttempts: 3
+        waitDuration: 500ms
+        retryExceptions:
+          - org.springframework.web.client.ResourceAccessException
+          - org.springframework.web.client.HttpServerErrorException
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+    tags-sorter: alpha
+  api-docs:
+    path: /v3/api-docs
