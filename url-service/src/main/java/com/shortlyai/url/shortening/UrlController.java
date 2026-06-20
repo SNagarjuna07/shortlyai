@@ -2,6 +2,8 @@ package com.shortlyai.url.shortening;
 
 import com.shortlyai.url.common.dto.ShortenRequest;
 import com.shortlyai.url.common.dto.ShortenResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,17 +20,22 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @RequestMapping("${api.prefix}/urls")
 @Slf4j
+@Tag(name = "URL Controller")
 public class UrlController {
 
     private final ShorteningService shorteningService;
 
+    @Operation(
+            summary = "Shorten URL",
+            description = "Allows users to shorten an URL"
+    )
     @PostMapping
     public ResponseEntity<ShortenResponse> shortenURL(
             @Valid @RequestBody ShortenRequest request,
             @AuthenticationPrincipal UUID userId
     ) {
 
-        log.info("Create URL request from userId={}", userId);
+        log.info("Create URL request from userId: {}", userId);
 
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(
@@ -37,29 +44,53 @@ public class UrlController {
                 );
     }
 
+    @Operation(
+            summary = "Get URLs",
+            description = "Retrieves all URLs of an user"
+    )
     @GetMapping
     public ResponseEntity<Page<ShortenResponse>> getAllUrls(
             @AuthenticationPrincipal UUID userId,
             Pageable pageable
     ) {
 
-        log.info("Get URLs for userId={}", userId);
+        log.info("Get URLs for userId: {}", userId);
 
-        return ResponseEntity.ok(shorteningService.getUserUrls(userId, pageable));
+        return ResponseEntity
+                .ok(
+                        shorteningService.getUserUrls(
+                                userId,
+                                pageable
+                        )
+                );
     }
 
+    @Operation(
+            summary = "Fetch URL",
+            description = "Fetches an URL by its ID"
+    )
     @GetMapping("/id/{id}")
     public ResponseEntity<ShortenResponse> getUrl(
             @PathVariable Long id,
             @AuthenticationPrincipal UUID userId
     ) {
 
-        log.info("Get URL id={} for userId={}", id, userId);
+        log.info("Get URL id: {} for userId: {}", id, userId);
 
-        return ResponseEntity.ok(shorteningService.getUrl(id, userId));
+        return ResponseEntity
+                .ok(
+                        shorteningService.getUrl(
+                                id,
+                                userId
+                        )
+                );
 
     }
 
+    @Operation(
+            summary = "Get slug",
+            description = "Allows users to fetch a slug"
+    )
     @GetMapping("/slug/{slug}")
     public ResponseEntity<ShortenResponse> getUrlBySlug(
             @PathVariable String slug,
@@ -68,22 +99,38 @@ public class UrlController {
 
         log.info("Get URL slug: {} for userId: {}", slug, userId);
 
-        return ResponseEntity.ok(shorteningService.getUrlBySlug(slug, userId));
+        return ResponseEntity
+                .ok(
+                        shorteningService.getUrlBySlug(
+                                slug,
+                                userId
+                        )
+                );
     }
 
+    @Operation(
+            summary = "Delete an URL by its ID",
+            description = "Allows users to delete their shortened URL"
+    )
     @DeleteMapping("/id/{id}")
     public ResponseEntity<Void> deleteUrl(
             @PathVariable Long id,
             @AuthenticationPrincipal UUID userId
     ) {
 
-        log.info("Delete URL id={} for userId={}", id, userId);
+        log.info("Delete URL id: {} for userId: {}", id, userId);
 
         shorteningService.delete(id, userId);
 
-        return ResponseEntity.status(HttpStatus.NO_CONTENT).build();
+        return ResponseEntity
+                .status(HttpStatus.NO_CONTENT)
+                .build();
     }
 
+    @Operation(
+            summary = "Delete an URL by its slug",
+            description = "Allows users to delete their slug of the shortened URL"
+    )
     @DeleteMapping("/slug/{slug}")
     public ResponseEntity<Void> deleteUrl(
             @PathVariable String slug,
@@ -94,6 +141,8 @@ public class UrlController {
 
         shorteningService.deleteUrl(slug, userId);
 
-        return ResponseEntity.noContent().build(); // 204
+        return ResponseEntity
+                .noContent()
+                .build();
     }
 }

@@ -1,7 +1,7 @@
 package com.shortlyai.url.common.config;
 
 import com.shortlyai.url.common.security.HeaderAuthFilter;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -12,10 +12,20 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 @Configuration
-@RequiredArgsConstructor
 public class SecurityConfig {
 
     private final HeaderAuthFilter headerAuthFilter;
+
+    private final String apiPrefix;
+
+    public SecurityConfig(
+            HeaderAuthFilter headerAuthFilter,
+            @Value("${api.prefix}") String apiPrefix
+    ) {
+
+        this.headerAuthFilter = headerAuthFilter;
+        this.apiPrefix = apiPrefix;
+    }
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -37,22 +47,24 @@ public class SecurityConfig {
 
                 .authorizeHttpRequests(auth -> auth
 
-                        // Redirect endpoint is public — anyone can follow a short link
+                        // Redirect endpoint is public - anyone can follow a short link
                         // No auth header needed for GET /api/v1/r/{slug}
-                        .requestMatchers(HttpMethod.GET, "/api/v1/r/**", "/actuator/**").permitAll()
-
-                        // Actuator health check — needed by Docker health checks and k8s probes
-                        .requestMatchers("/actuator/health").permitAll()
+                        .requestMatchers(HttpMethod.GET, apiPrefix +"/r/**",
+                                "/actuator/**",
+                                "/swagger-ui.html",
+                                "/v3/api-docs/**",
+                                "/swagger-ui/**",
+                                "/actuator/health").permitAll()
 
                         // Everything else requires a valid X-User-Id header
-                        // The gateway already validated the JWT — we just trust the header
+                        // The gateway already validated the JWT - we just trust the header
                         .anyRequest().authenticated()
                 );
 
         // IMPORTANT: We are NOT adding any JWT filter here.
         // url-service never sees the JWT token.
         // The gateway extracts userId and passes it as X-User-Id header.
-        // A custom filter (HeaderAuthFilter) reads that header — wired separately.
+        // A custom filter (HeaderAuthFilter) reads that header - wired separately.
         http.addFilterBefore(headerAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();

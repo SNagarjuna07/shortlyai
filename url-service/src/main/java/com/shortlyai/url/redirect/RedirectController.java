@@ -1,6 +1,8 @@
 package com.shortlyai.url.redirect;
 
 import com.shortlyai.url.shortening.ShorteningService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,13 +20,18 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("${api.prefix}/r")
 @RequiredArgsConstructor
 @Slf4j
+@Tag(name = "Redirect Controller")
 public class RedirectController {
 
-    // Interface injection — never the concrete impl
+    // Interface injection - never the concrete impl
     private final ShorteningService shorteningService;
 
-    // GET /api/v1/r/{slug} — resolve slug to original URL and redirect
-    // No @AuthenticationPrincipal — this endpoint is intentionally public
+    // GET /api/v1/r/{slug} - resolve slug to original URL and redirect
+    // No @AuthenticationPrincipal - this endpoint is intentionally public
+    @Operation(
+            summary = "Redirect",
+            description = "Redirects users to the original URL"
+    )
     @GetMapping("/{slug}")
     public ResponseEntity<Void> redirect(
             @PathVariable String slug,
@@ -33,20 +40,20 @@ public class RedirectController {
 
         log.info("Redirect request for slug: {}", slug);
 
-        // Redis first, Postgres fallback — handled inside resolve()
+        // Redis first, Postgres fallback - handled inside resolve()
         String longUrl = shorteningService.resolve(slug, request);
 
-        // Set Location header — browser follows this to the original URL
+        // Set Location header - browser follows this to the original URL
         HttpHeaders headers = new HttpHeaders();
 
         headers.add(HttpHeaders.LOCATION, longUrl);
 
-        // 302 FOUND not 301 — temporary redirect
-        // 301 is cached permanently by browsers — kills click analytics
-        // 302 forces every click to hit our server — we track every redirect
-        return ResponseEntity.status(HttpStatus.FOUND)
-                .headers(headers).build();
+        // 302 FOUND not 301 - temporary redirect
+        // 301 is cached permanently by browsers - kills click analytics
+        // 302 forces every click to hit our server - we track every redirect
+        return ResponseEntity
+                .status(HttpStatus.FOUND)
+                .headers(headers)
+                .build();
     }
-
-
 }
