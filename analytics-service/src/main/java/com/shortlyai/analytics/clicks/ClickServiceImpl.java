@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.UUID;
 
 @Slf4j
 @Service
@@ -112,9 +113,10 @@ public class ClickServiceImpl implements ClickService {
 
     // Queries raw click_events grouped by urlId. Returns top N by click count
     @Transactional(readOnly = true)
-    public List<TopUrlResponse> getTopUrls(int limit) {
+    public List<TopUrlResponse> getTopUrls(UUID userId, int limit) {
 
-        return clickEventRepository.findTopUrls(
+        return clickEventRepository.findTopUrlsByUserId(
+                userId,
                 PageRequest.of(
                         0,
                         limit

@@ -5,6 +5,7 @@ import com.shortlyai.analytics.events.UrlCreatedEvent;
 import com.shortlyai.analytics.events.UrlDeletedEvent;
 
 import java.util.List;
+import java.util.UUID;
 
 public interface ClickService {
 
@@ -18,5 +19,5 @@ public interface ClickService {
 
     List<HourlyBreakdownResponse> getHourlyBreakdown(Long urlId, int hours);
 
-    List<TopUrlResponse> getTopUrls(int limit);
+    List<TopUrlResponse> getTopUrls(UUID userId, int limit);
 }
