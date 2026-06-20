@@ -9,6 +9,7 @@ import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
+
 import java.util.UUID;
 
 // GlobalFilter - runs on EVERY route, no per-route config needed
@@ -61,6 +62,12 @@ public class TraceIdFilter implements GlobalFilter, Ordered {
                 exchange.getRequest().getURI().getPath());
 
         // Pass mutated exchange downstream - all subsequent filters see the trace ID
-        return chain.filter(exchange.mutate().request(mutatedRequest).build());
+        return chain.filter(
+                        exchange
+                                .mutate()
+                                .request(mutatedRequest)
+                                .build()
+                )
+                .doFinally(signalType -> MDC.remove("traceId"));
     }
 }
