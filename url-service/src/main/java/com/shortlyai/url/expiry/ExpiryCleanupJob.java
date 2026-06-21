@@ -28,7 +28,9 @@ public class ExpiryCleanupJob {
 
         log.info("Starting expired URLs cleanup..");
 
-        List<String> expiredSlugs = urlRepository.findExpiredSlugs(Instant.now());
+        Instant now = Instant.now();
+
+        List<String> expiredSlugs = urlRepository.findExpiredSlugs(now);
 
         // Check if it is empty
         if (expiredSlugs.isEmpty()) {
@@ -39,7 +41,7 @@ public class ExpiryCleanupJob {
         }
 
         // Deactivate all in one query - efficient
-        int count = urlRepository.deactivateExpiredUrls(Instant.now());
+        int count = urlRepository.deactivateExpiredUrls(now);
 
         // Evict each from Redis cache
         expiredSlugs.forEach(slug ->
