@@ -61,7 +61,7 @@ class ClickServiceImplTest {
 
         UrlClickedEvent event = new UrlClickedEvent(
                 42L, "abc123", "Mozilla/5.0", "hash123",
-                "https://google.com", "US", "NYC", now);
+                "https://google.com", "US", "NYC", now, UUID.fromString("bg6b78b0-7s36-4nkd-a6b5-979f5fg9679"));
 
         String expectedFingerprint = "42:hash123:" + (now.getEpochSecond() / 60);
 
@@ -84,7 +84,7 @@ class ClickServiceImplTest {
         Instant now = Instant.now();
 
         UrlClickedEvent event = new UrlClickedEvent(
-                7L, "xyz", "ua", "iphash", "ref", "IN", "Mysuru", now);
+                7L, "xyz", "ua", "iphash", "ref", "IN", "Mysuru", now, UUID.fromString("bg6b78b0-7s36-4nkd-a6b5-979f5fg9679"));
 
         when(bloomFilterService.isDuplicate(anyString())).thenReturn(true);
 
@@ -180,9 +180,19 @@ class ClickServiceImplTest {
 
         ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
 
-        when(clickEventRepository.findTopUrls(pageableCaptor.capture())).thenReturn(expected);
+        when(clickEventRepository
+                .findTopUrlsByUserId(
+                        UUID.fromString("bg6b78b0-7s36-4nkd-a6b5-979f5fg9679"),
+                        pageableCaptor.capture()
+                )
+        )
+                .thenReturn(expected);
 
-        List<TopUrlResponse> result = clickService.getTopUrls(5);
+        List<TopUrlResponse> result = clickService
+                .getTopUrls(
+                        UUID.fromString("bg6b78b0-7s36-4nkd-a6b5-979f5fg9679"),
+                        5
+                );
 
         assertThat(result).isEqualTo(expected);
 
