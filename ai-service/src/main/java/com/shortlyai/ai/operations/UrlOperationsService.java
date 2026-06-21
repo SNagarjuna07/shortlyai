@@ -7,8 +7,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
-// Shared HTTP ops for url-service.
-// No CB/retry here - resilience lives at the tool layer (caller handles fallbacks).
+// Shared HTTP ops for url-service
+// // No CB/retry here - resilience handled by ResilientUrlOps
 @Service
 @Slf4j
 public class UrlOperationsService {

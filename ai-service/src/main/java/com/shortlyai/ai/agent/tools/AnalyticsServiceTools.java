@@ -8,6 +8,7 @@ import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.stereotype.Component;
+
 import java.util.List;
 
 @Component
@@ -27,16 +28,39 @@ public class AnalyticsServiceTools {
 
         log.info("Tool getUrlStats userId: {} urlId: {}", userId, urlId);
 
-        AnalyticsOperationsService.StatsResult stats =
-                resilientAnalyticsOps.getStats(urlId, userId);
+        try {
 
-        if (stats == null) {
-            return "Click stats for URL %d temporarily unavailable.".formatted(urlId);
+            AnalyticsOperationsService.StatsResult stats =
+                    resilientAnalyticsOps
+                            .getStats(urlId, userId)
+                            .join();
+
+            if (stats == null) {
+                return "Click stats for URL %d temporarily unavailable."
+                        .formatted(urlId);
+            }
+
+            log.debug(
+                    "getUrlStats urlId: {} totalClicks: {}",
+                    urlId,
+                    stats.totalClicks()
+            );
+
+            return "URL %d has %d total clicks"
+                    .formatted(stats.urlId(), stats.totalClicks());
+
+        } catch (Exception ex) {
+
+            log.error(
+                    "Failed to fetch stats for userId: {} urlId: {}",
+                    userId,
+                    urlId,
+                    ex
+            );
+
+            return "Click stats for URL %d temporarily unavailable."
+                    .formatted(urlId);
         }
-
-        log.debug("getUrlStats urlId: {} totalClicks: {}", urlId, stats.totalClicks());
-
-        return "URL %d has %d total clicks".formatted(stats.urlId(), stats.totalClicks());
     }
 
     @Tool(description = "Get the top performing URLs by click count for the current user")
@@ -49,22 +73,46 @@ public class AnalyticsServiceTools {
 
         log.info("Tool getTopUrls userId: {} limit: {}", userId, limit);
 
-        List<AnalyticsOperationsService.TopUrlResult> topUrls =
-                resilientAnalyticsOps.getTopUrls(limit, userId);
+        try {
 
-        // Empty list is the fallback sentinel from ResilientAnalyticsOps
-        if (topUrls.isEmpty()) {
+            List<AnalyticsOperationsService.TopUrlResult> topUrls =
+                    resilientAnalyticsOps
+                            .getTopUrls(limit, userId)
+                            .join();
+
+            // Empty list is the fallback sentinel from ResilientAnalyticsOps
+            if (topUrls.isEmpty()) {
+                return "Top URLs temporarily unavailable, analytics-service is down.";
+            }
+
+            log.debug(
+                    "getTopUrls userId: {} count: {}",
+                    userId,
+                    topUrls.size()
+            );
+
+            StringBuilder sb = new StringBuilder("Top URLs:\n");
+
+            for (AnalyticsOperationsService.TopUrlResult url : topUrls) {
+                sb.append("- urlId ")
+                        .append(url.urlId())
+                        .append(": ")
+                        .append(url.clickCount())
+                        .append(" clicks\n");
+            }
+
+            return sb.toString();
+
+        } catch (Exception ex) {
+
+            log.error(
+                    "Failed to fetch top URLs for userId: {} limit: {}",
+                    userId,
+                    limit,
+                    ex
+            );
+
             return "Top URLs temporarily unavailable, analytics-service is down.";
         }
-
-        log.debug("getTopUrls userId: {} count: {}", userId, topUrls.size());
-
-        StringBuilder sb = new StringBuilder("Top URLs:\n");
-
-        for (AnalyticsOperationsService.TopUrlResult url : topUrls) {
-            sb.append("- urlId ").append(url.urlId())
-                    .append(": ").append(url.clickCount()).append(" clicks\n");
-        }
-        return sb.toString();
     }
 }

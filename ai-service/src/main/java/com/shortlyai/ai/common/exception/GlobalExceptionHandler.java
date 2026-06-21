@@ -38,7 +38,7 @@ public class GlobalExceptionHandler {
     ) {
         // 404 not 500 — mcp-remote OAuth discovery needs clean 404 to fall back gracefully
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body(new ErrorResponse(Instant.now(), 404, "Resource not found", "MCP"));
+                .body(new ErrorResponse(Instant.now(), 404, "Resource not found", ex.getMessage()));
     }
 
     // downstream service (url-service / analytics-service) returned 4xx/5xx

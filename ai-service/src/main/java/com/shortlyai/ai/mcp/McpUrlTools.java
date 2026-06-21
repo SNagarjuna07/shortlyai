@@ -1,8 +1,7 @@
 package com.shortlyai.ai.mcp;
 
+import com.shortlyai.ai.operations.ResilientUrlOps;
 import com.shortlyai.ai.operations.UrlOperationsService;
-import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
-import io.github.resilience4j.retry.annotation.Retry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.tool.annotation.Tool;
@@ -10,12 +9,14 @@ import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 
+import java.util.concurrent.CompletionException;
+
 @Component
 @RequiredArgsConstructor
 @Slf4j
 public class McpUrlTools {
 
-    private final UrlOperationsService urlOps;
+    private final ResilientUrlOps resilientUrlOps;
 
     // userId comes from McpUserContext (set by McpKeyFilter after API key validation)
     // No @ToolParam userId - LLM cannot inject or forge it
@@ -33,10 +34,8 @@ public class McpUrlTools {
     }
 
     @Tool(name = "mcp_shortenUrl", description = """
-            Shorten a long URL. Returns the generated short URL and its numeric urlId.
+            Shorten a long URL. Returns the generated short URL and its redirect link.
             """)
-    @CircuitBreaker(name = "url-service", fallbackMethod = "shortenUrlFallback")
-    @Retry(name = "url-service")
     public String shortenUrl(
             @ToolParam(description = "The original long URL to shorten (must include http:// or https://)") String originalUrl
     ) {
@@ -47,34 +46,40 @@ public class McpUrlTools {
 
         try {
 
-            UrlOperationsService.ShortenResult r = urlOps.shorten(originalUrl, userId);
+            UrlOperationsService.ShortenResult r = resilientUrlOps
+                    .shorten(originalUrl, userId)
+                    .join(); //.get() -> throws ExecutionException, .join() -> CompletionException (unchecked)
 
-            log.debug("MCP shortenUrl slug: {}, id: {}", r.slug(), r.id());
+            if (r == null) {
+                return "URL shortening temporarily unavailable. Try again shortly.";
+            }
 
-            return "Short URL created: %s (urlId: %d, slug: %s)".formatted(r.shortUrl(), r.id(), r.slug());
+            return "Short URL created: %s (urlId: %d, slug: %s)"
+                    .formatted(r.shortUrl(), r.id(), r.slug());
 
-        } catch (HttpClientErrorException e) {
+        } catch (CompletionException e) {
 
-            // 4xx = client error (invalid URL format, bad request) - server is healthy, don't trip CB
-            log.warn("MCP shortenUrl 4xx for userId: {}, url: {}, status: {}", userId, originalUrl, e.getStatusCode());
+            if (e.getCause() instanceof HttpClientErrorException httpEx) {
 
-            return "Could not shorten URL: %s (%s)".formatted(originalUrl, e.getStatusText());
+                log.warn(
+                        "MCP shortenUrl 4xx for userId: {}, url: {}, status: {}",
+                        userId,
+                        originalUrl,
+                        httpEx.getStatusCode()
+                );
+
+                return "Could not shorten URL: %s (%s)"
+                        .formatted(originalUrl, httpEx.getStatusText());
+            }
+
+            throw e;
         }
-    }
-
-    public String shortenUrlFallback(String originalUrl, Throwable ex) {
-
-        log.error("url-service unavailable for MCP shortenUrl, url: {}", originalUrl, ex);
-
-        return "URL shortening temporarily unavailable. Try again shortly.";
     }
 
     @Tool(name = "mcp_getUrlDetails", description = """
             Get details of a shortened URL by its slug.
             Returns the original URL, short URL, and total click count.
             """)
-    @CircuitBreaker(name = "url-service", fallbackMethod = "getUrlDetailsFallback")
-    @Retry(name = "url-service")
     public String getUrlDetails(
             @ToolParam(description = "The short slug (e.g. abc123)") String slug
     ) {
@@ -85,33 +90,47 @@ public class McpUrlTools {
 
         try {
 
-            UrlOperationsService.UrlDetails d = urlOps.getDetails(slug, userId);
+            UrlOperationsService.UrlDetails d = resilientUrlOps
+                    .getDetails(slug, userId)
+                    .join();
+
+            if (d == null) {
+                return "Could not retrieve details for '%s' - url-service temporarily unavailable."
+                        .formatted(slug);
+            }
 
             return "urlId: %d | slug: %s | original: %s | short: %s | clicks: %d"
-                    .formatted(d.id(), d.slug(), d.originalUrl(), d.shortUrl(), d.clickCount());
+                    .formatted(
+                            d.id(),
+                            d.slug(),
+                            d.originalUrl(),
+                            d.shortUrl(),
+                            d.clickCount()
+                    );
 
-        } catch (HttpClientErrorException e) {
+        } catch (CompletionException e) {
 
-            // 404 = slug not found, 403 = not owned by this user
-            log.warn("MCP getUrlDetails 4xx userId: {}, slug: {}, status: {}", userId, slug, e.getStatusCode());
+            if (e.getCause() instanceof HttpClientErrorException httpEx) {
 
-            return "Could not retrieve details for '%s': %s".formatted(slug, e.getStatusText());
+                log.warn(
+                        "MCP getUrlDetails 4xx userId: {}, slug: {}, status: {}",
+                        userId,
+                        slug,
+                        httpEx.getStatusCode()
+                );
+
+                return "Could not retrieve details for '%s': %s"
+                        .formatted(slug, httpEx.getStatusText());
+            }
+
+            throw e;
         }
-    }
-
-    public String getUrlDetailsFallback(String slug, Throwable ex) {
-
-        log.error("url-service unavailable for MCP getUrlDetails, slug: {}", slug, ex);
-
-        return "Could not retrieve details for '%s' - url-service temporarily unavailable.".formatted(slug);
     }
 
     @Tool(name = "mcp_deleteUrl", description = """
             Permanently delete a shortened URL by its slug.
             This action is irreversible - always confirm with the user before calling.
             """)
-    @CircuitBreaker(name = "url-service", fallbackMethod = "deleteUrlFallback")
-    @Retry(name = "url-service")
     public String deleteUrl(
             @ToolParam(description = "The slug of the URL to delete") String slug
     ) {
@@ -122,11 +141,17 @@ public class McpUrlTools {
 
         try {
 
-            urlOps.delete(slug, userId);
+            Boolean deleted = resilientUrlOps
+                    .delete(slug, userId)
+                    .join();
 
-            log.info("MCP deleteUrl completed userId: {}, slug: {}", userId, slug);
+            if (Boolean.TRUE.equals(deleted)) {
 
-            return "Deleted URL with slug: " + slug;
+                return "Deleted URL with slug: " + slug;
+            }
+
+            return "Could not delete '%s' - url-service temporarily unavailable."
+                    .formatted(slug);
 
         } catch (HttpClientErrorException e) {
 
@@ -135,12 +160,5 @@ public class McpUrlTools {
 
             return "Could not delete '%s': %s".formatted(slug, e.getStatusText());
         }
-    }
-
-    public String deleteUrlFallback(String slug, Throwable ex) {
-
-        log.error("url-service unavailable for MCP deleteUrl, slug: {}", slug, ex);
-
-        return "Could not delete '%s' - url-service temporarily unavailable.".formatted(slug);
     }
 }

@@ -26,15 +26,37 @@ public class UrlServiceTools {
 
         log.info("Tool shortenUrl userId: {} url: {}", userId, originalUrl);
 
-        UrlOperationsService.ShortenResult result = resilientUrlOps.shorten(originalUrl, userId);
+        try {
 
-        if (result == null) {
-            return "URL shortening temporarily unavailable - please try again shortly.";
+            UrlOperationsService.ShortenResult result =
+                    resilientUrlOps
+                            .shorten(originalUrl, userId)
+                            .join();
+
+            if (result == null) {
+                return "URL shortening temporarily unavailable. Please try again shortly.";
+            }
+
+            log.debug(
+                    "shortenUrl slug: {} urlId: {}",
+                    result.slug(),
+                    result.id()
+            );
+
+            return "Short URL created: %s (urlId: %d)"
+                    .formatted(result.shortUrl(), result.id());
+
+        } catch (Exception ex) {
+
+            log.error(
+                    "Failed to shorten URL for userId: {} url: {}",
+                    userId,
+                    originalUrl,
+                    ex
+            );
+
+            return "URL shortening temporarily unavailable. Please try again shortly.";
         }
-
-        log.debug("shortenUrl slug: {} urlId: {}", result.slug(), result.id());
-
-        return "Short URL created: %s (urlId: %d)".formatted(result.shortUrl(), result.id());
     }
 
     @Tool(description = "Get details of a shortened URL by its slug")
@@ -47,17 +69,44 @@ public class UrlServiceTools {
 
         log.info("Tool getUrlDetails userId: {} slug: {}", userId, slug);
 
-        UrlOperationsService.UrlDetails details = resilientUrlOps.getDetails(slug, userId);
+        try {
 
-        if (details == null) {
+            UrlOperationsService.UrlDetails details =
+                    resilientUrlOps
+                            .getDetails(slug, userId)
+                            .join();
+
+            if (details == null) {
+                return "Could not retrieve details for '%s' - url-service temporarily unavailable."
+                        .formatted(slug);
+            }
+
+            log.debug(
+                    "getUrlDetails slug: {} clicks: {}",
+                    slug,
+                    details.clickCount()
+            );
+
+            return "urlId: %d, slug: %s, original URL: %s, clicks: %d"
+                    .formatted(
+                            details.id(),
+                            details.slug(),
+                            details.originalUrl(),
+                            details.clickCount()
+                    );
+
+        } catch (Exception ex) {
+
+            log.error(
+                    "Failed to fetch URL details for userId: {} slug: {}",
+                    userId,
+                    slug,
+                    ex
+            );
+
             return "Could not retrieve details for '%s' - url-service temporarily unavailable."
                     .formatted(slug);
         }
-
-        log.debug("getUrlDetails slug: {} clicks: {}", slug, details.clickCount());
-
-        return "urlId: %d, slug: %s, original URL: %s, clicks: %d"
-                .formatted(details.id(), details.slug(), details.originalUrl(), details.clickCount());
     }
 
     @Tool(description = "Delete a shortened URL by its slug")
@@ -70,14 +119,37 @@ public class UrlServiceTools {
 
         log.warn("Tool deleteUrl userId: {} slug: {}", userId, slug);
 
-        boolean deleted = resilientUrlOps.delete(slug, userId);
+        try {
 
-        if (!deleted) {
-            return "Could not delete '%s': url-service temporarily unavailable.".formatted(slug);
+            boolean deleted =
+                    resilientUrlOps
+                            .delete(slug, userId)
+                            .join();
+
+            if (!deleted) {
+                return "Could not delete '%s': url-service temporarily unavailable."
+                        .formatted(slug);
+            }
+
+            log.info(
+                    "deleteUrl completed userId: {} slug: {}",
+                    userId,
+                    slug
+            );
+
+            return "Deleted URL with slug: " + slug;
+
+        } catch (Exception ex) {
+
+            log.error(
+                    "Failed to delete URL for userId: {} slug: {}",
+                    userId,
+                    slug,
+                    ex
+            );
+
+            return "Could not delete '%s': url-service temporarily unavailable."
+                    .formatted(slug);
         }
-
-        log.info("deleteUrl completed userId: {} slug: {}", userId, slug);
-
-        return "Deleted URL with slug: " + slug;
     }
 }
