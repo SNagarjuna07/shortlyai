@@ -104,6 +104,10 @@ resilience4j:
         timeout-duration: 30s
         cancel-running-future: true
 
+      analytics-service:
+        timeout-duration: 30s
+        cancel-running-future: true
+
   circuitbreaker:
     instances:
       ai-service:
@@ -112,7 +116,7 @@ resilience4j:
         slidingWindowSize: 10
         minimumNumberOfCalls: 5
         failureRateThreshold: 50
-        slowCallDurationThreshold: 2s
+        slowCallDurationThreshold: 15s
         slowCallRateThreshold: 50
         waitDurationInOpenState: 10s
         permittedNumberOfCallsInHalfOpenState: 3
@@ -146,6 +150,7 @@ resilience4j:
         recordExceptions:
           - org.springframework.web.client.ResourceAccessException
           - org.springframework.web.client.HttpServerErrorException
+          - java.util.concurrent.TimeoutException
       analytics-service:
         registerHealthIndicator: true
         slidingWindowType: COUNT_BASED
@@ -162,6 +167,7 @@ resilience4j:
         recordExceptions:
           - org.springframework.web.client.ResourceAccessException
           - org.springframework.web.client.HttpServerErrorException
+          - java.util.concurrent.TimeoutException
 
   retry:
     instances:
