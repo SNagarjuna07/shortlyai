@@ -80,6 +80,10 @@ spring:
               predicates:
                 - Path=/api/v1/ai/**
 
+              metadata:
+                response-timeout: 35000
+                connection-timeout: 2000
+
               filters:
                 - name: CircuitBreaker
                   args:
@@ -99,7 +103,7 @@ spring:
                 - Path=/mcp, /mcp/**
               metadata:
                 response-timeout: 35000
-                connection-timeout: 2000
+                connection-timeout: 10000
 
               filters:
                 - name: CircuitBreaker
