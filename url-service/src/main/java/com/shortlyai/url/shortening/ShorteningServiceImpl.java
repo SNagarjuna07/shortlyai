@@ -284,7 +284,7 @@ public class ShorteningServiceImpl implements ShorteningService {
         // publish url.deleted event (Kafka)
         publishDeletedEvent(url);
 
-        log.info("Deleted URL slug={} urlId={} userId={}", slug, url.getId(), userId);
+        log.info("Deleted URL slug: {} urlId: {} userId: {}", slug, url.getId(), userId);
     }
 
     private ShortenResponse mapToResponse(Url u) {
@@ -318,11 +318,11 @@ public class ShorteningServiceImpl implements ShorteningService {
             kafkaTemplate.send(urlCreatedTopic, slug, event)
                     .whenComplete((result, ex) -> {
                         if (ex != null) {
-                            log.error("Kafka publish failed: topic={} slug={} error={}",
+                            log.error("Kafka publish failed: topic: {} slug: {} error: {}",
                                     urlCreatedTopic, slug, ex.getMessage());
                             failedEventService.save(urlCreatedTopic, slug, event, ex.getMessage());
                         } else {
-                            log.debug("Published url.created: topic={} slug={} urlId={} partition={}",
+                            log.debug("Published url.created: topic: {} slug: {} urlId: {} partition: {}",
                                     urlCreatedTopic, slug, urlId,
                                     result.getRecordMetadata().partition());
                         }
@@ -347,18 +347,31 @@ public class ShorteningServiceImpl implements ShorteningService {
 
         UrlDeletedEvent event = new UrlDeletedEvent(urlId, slug, url.getUserId(), Instant.now());
 
-        kafkaTemplate.send(urlDeletedTopic, slug, event)
-                .whenComplete((result, ex) -> {
-                    if (ex != null) {
-                        log.error("Kafka publish failed: topic={} slug={} error={}",
-                                urlDeletedTopic, slug, ex.getMessage());
-                        failedEventService.save(urlDeletedTopic, slug, event, ex.getMessage());
-                    } else {
-                        log.debug("Published url.deleted: topic={} slug={} urlId={} partition={}",
-                                urlDeletedTopic, slug, urlId,
-                                result.getRecordMetadata().partition());
-                    }
-                });
+        try {
+
+            kafkaTemplate.send(urlDeletedTopic, slug, event)
+                    .whenComplete((result, ex) -> {
+                        if (ex != null) {
+                            log.error("Kafka publish failed: topic: {} slug: {} error: {}",
+                                    urlDeletedTopic, slug, ex.getMessage());
+                            failedEventService.save(urlDeletedTopic, slug, event, ex.getMessage());
+                        } else {
+                            log.debug("Published url.deleted: topic: {} slug: {} urlId: {} partition: {}",
+                                    urlDeletedTopic, slug, urlId,
+                                    result.getRecordMetadata().partition());
+                        }
+                    });
+        } catch (Exception e) {
+
+            log.error("Failed to publish " + urlDeletedTopic + " event: ", e);
+
+            failedEventService.save(
+                    urlDeletedTopic,
+                    slug,
+                    event,
+                    e.getMessage()
+            );
+        }
     }
 
     private void publishClickEvent(Long urlId, String slug, UUID ownerId, HttpServletRequest request) {
@@ -375,18 +388,32 @@ public class ShorteningServiceImpl implements ShorteningService {
                 ownerId
         );
 
-        kafkaTemplate.send(urlClickedTopic, slug, event)
-                .whenComplete((result, ex) -> {
-                    if (ex != null) {
-                        log.error("Kafka publish failed: topic={} slug={} error={}",
-                                urlClickedTopic, slug, ex.getMessage());
-                        failedEventService.save(urlClickedTopic, slug, event, ex.getMessage());
-                    } else {
-                        log.debug("Published url.clicked: topic={} slug={} urlId={} partition={}",
-                                urlClickedTopic, slug, urlId,
-                                result.getRecordMetadata().partition());
-                    }
-                });
+        try {
+
+            kafkaTemplate.send(urlClickedTopic, slug, event)
+                    .whenComplete((result, ex) -> {
+                        if (ex != null) {
+                            log.error("Kafka publish failed: topic: {} slug: {} error: {}",
+                                    urlClickedTopic, slug, ex.getMessage());
+                            failedEventService.save(urlClickedTopic, slug, event, ex.getMessage());
+                        } else {
+                            log.debug("Published url.clicked: topic: {} slug: {} urlId: {} partition: {}",
+                                    urlClickedTopic, slug, urlId,
+                                    result.getRecordMetadata().partition());
+                        }
+                    });
+
+        } catch (Exception e) {
+
+            log.error("Failed to publish " + urlClickedTopic + " event: ", e);
+
+            failedEventService.save(
+                    urlClickedTopic,
+                    slug,
+                    event,
+                    e.getMessage()
+            );
+        }
     }
 
 
