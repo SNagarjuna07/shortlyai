@@ -35,6 +35,7 @@ public class McpUrlTools {
 
     @Tool(name = "mcp_shortenUrl", description = """
             Shorten a long URL. Returns the generated short URL and its redirect link.
+            Never share the URL id in the response.
             """)
     public String shortenUrl(
             @ToolParam(description = "The original long URL to shorten (must include http:// or https://)") String originalUrl
