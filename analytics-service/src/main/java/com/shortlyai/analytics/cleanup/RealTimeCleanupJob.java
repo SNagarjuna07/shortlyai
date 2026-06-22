@@ -3,10 +3,14 @@ package com.shortlyai.analytics.cleanup;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
+import org.springframework.data.redis.connection.RedisConnection;
+import org.springframework.data.redis.core.Cursor;
+import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -27,34 +31,29 @@ public class RealTimeCleanupJob {
 
         log.info("Starting zero URL click counters cleanup..");
 
-        Set<String> keys = stringRedisTemplate.keys("clicks:realtime:*");
-
-        // Nothing in Redis
-        if (keys == null || keys.isEmpty()) {
-
-            log.info("No realtime keys found, skipping cleanup");
-
-            return;
-        }
-
-        List<String> keyList = new ArrayList<>(keys);
-
-        List<String> values = stringRedisTemplate
-                .opsForValue()
-                .multiGet(keyList);
-
         Set<String> keysToDelete = new HashSet<>();
 
-        // Filter keys whose value is "0" - initialized but never clicked
-        for (int i = 0; i < keyList.size(); i++) {
+        ScanOptions options = ScanOptions.scanOptions()
+                .match("clicks:realtime:*")
+                .count(500)
+                .build();
 
-            if ("0".equals(values.get(i))) {
+        try (RedisConnection connection = stringRedisTemplate.getConnectionFactory().getConnection();
 
-                keysToDelete.add(keyList.get(i));
+             Cursor<byte[]> cursor = connection.scan(options)) {
+
+            while (cursor.hasNext()) {
+
+                String key = new String(cursor.next(), StandardCharsets.UTF_8);
+
+                String val = stringRedisTemplate.opsForValue().get(key);
+
+                if ("0".equals(val)) {
+                    keysToDelete.add(key);
+                }
             }
         }
 
-        // No key (URL) found with 0 clicks
         if (keysToDelete.isEmpty()) {
 
             log.info("No zero-count keys to clean up");
