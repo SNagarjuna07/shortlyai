@@ -117,6 +117,7 @@ spring:
                 - Path=/r/{slug}
 
               filters:
+                - RewritePath=/r/(?<slug>.*), /api/v1/r/${slug}
                 - name: CircuitBreaker
                   args:
                     name: urlServiceCB
