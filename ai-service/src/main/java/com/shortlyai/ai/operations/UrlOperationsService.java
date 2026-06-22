@@ -8,7 +8,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
 // Shared HTTP ops for url-service
-// // No CB/retry here - resilience handled by ResilientUrlOps
+// No CB/retry here - resilience handled by ResilientUrlOps
 @Service
 @Slf4j
 public class UrlOperationsService {
@@ -25,10 +25,12 @@ public class UrlOperationsService {
         this.apiPrefix = apiPrefix;
     }
 
-    // Matches url-service ShortenResponse field-for-field
+    // url-service ShortenResponse has 9 fields (id, slug, shortUrl, originalUrl,
+    // userId, isCustom, clickCount, expiresAt, createdAt).
+    // We only need 3 - ignoreUnknown = true prevents UnrecognizedPropertyException.
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public record ShortenResult(Long id, String slug, String shortUrl) {}
 
-    // ignoreUnknown = true: url-service returns extra fields (expiresAt, etc.)
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record UrlDetails(Long id, String slug, String originalUrl, String shortUrl, long clickCount) {}
 
