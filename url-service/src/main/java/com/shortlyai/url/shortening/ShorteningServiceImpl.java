@@ -38,6 +38,8 @@ public class ShorteningServiceImpl implements ShorteningService {
 
     private final String baseDomain;
 
+    private final String apiPrefix;
+
     private final long defaultExpiryDays;
 
     private final long cacheTtlSeconds;
@@ -53,6 +55,7 @@ public class ShorteningServiceImpl implements ShorteningService {
             StringRedisTemplate stringRedisTemplate,
             KafkaTemplate<String, Object> kafkaTemplate,
             @Value("${url.base-domain}") String baseDomain,
+            @Value("${api.prefix}") String apiPrefix,
             @Value("${url.default-expiry-days}") long defaultExpiryDays,
             @Value("${url.cache-ttl-seconds}") long cacheTtlSeconds,
             @Value("${spring.kafka.topics.url-created}") String urlCreatedTopic,
@@ -64,6 +67,7 @@ public class ShorteningServiceImpl implements ShorteningService {
         this.kafkaTemplate = kafkaTemplate;
         this.failedEventService = failedEventService;
         this.baseDomain = baseDomain;
+        this.apiPrefix = apiPrefix;
         this.defaultExpiryDays = defaultExpiryDays;
         this.cacheTtlSeconds = cacheTtlSeconds;
         this.urlCreatedTopic = urlCreatedTopic;
@@ -73,6 +77,11 @@ public class ShorteningServiceImpl implements ShorteningService {
 
     // Used by REDIS for caching
     private static final String CACHE_PREFIX = "url:";
+
+    // \u0000 (null byte)
+    // URL is stored LAST so split("\u0000", 3) never cuts into it.
+    // Format: "urlId\u0000userId\u0000originalUrl"
+    private static final String CACHE_SEP = "\u0000";
 
     @Override
     public ShortenResponse shorten(ShortenRequest request, UUID userId) {
@@ -107,6 +116,7 @@ public class ShorteningServiceImpl implements ShorteningService {
 
         // Set custom slug if provided else temp slug so DataIntegrityViolationException does not occur
         if (isCustom) {
+
             url.setSlug(request.customSlug());
 
         } else {
@@ -133,10 +143,10 @@ public class ShorteningServiceImpl implements ShorteningService {
         stringRedisTemplate.opsForValue().set(
                 CACHE_PREFIX + savedUrl.getSlug(),
                 savedUrl.getId() +
-                        "|" +
-                        savedUrl.getOriginalUrl() +
-                        "|" +
-                        savedUrl.getUserId(), // <- urlId|url|userId
+                        CACHE_SEP +
+                        savedUrl.getUserId() +
+                        CACHE_SEP +
+                        savedUrl.getOriginalUrl(),
                 Duration.ofSeconds(cacheTtlSeconds)
         );
 
@@ -166,13 +176,14 @@ public class ShorteningServiceImpl implements ShorteningService {
             log.info("Cache hit for slug: {}", slug);
 
             // parse the url which contains id, if Redis is hit there will no id
-            String[] parts = cached.split("\\|", 3); // \\| splits 1st |
+            String[] parts = cached.split(CACHE_SEP, 3);
 
             Long urlId = Long.parseLong(parts[0]);
 
-            String originalUrl = parts[1];
+            UUID userId = UUID.fromString(parts[1]);
 
-            UUID userId = UUID.fromString(parts[2]);
+            String originalUrl = parts[2];
+
 
             // publish click also on cache hit
             publishClickEvent(urlId, slug, userId, request);
@@ -196,10 +207,10 @@ public class ShorteningServiceImpl implements ShorteningService {
         stringRedisTemplate.opsForValue().set(
                 CACHE_PREFIX + slug,
                 shortUrl.getId() +
-                        "|" +
-                        shortUrl.getOriginalUrl() +
-                        "|" +
-                        shortUrl.getUserId(), // <- same format
+                        CACHE_SEP +
+                        shortUrl.getUserId() +
+                        CACHE_SEP +
+                        shortUrl.getOriginalUrl(), // <- same format
                 Duration.ofSeconds(cacheTtlSeconds)
         );
 
@@ -292,7 +303,7 @@ public class ShorteningServiceImpl implements ShorteningService {
         return new ShortenResponse(
                 u.getId(),
                 u.getSlug(),
-                baseDomain + "/" + u.getSlug(),
+                baseDomain + apiPrefix + "/r/" + u.getSlug(),
                 u.getOriginalUrl(),
                 u.getUserId(),
                 u.isCustom(),
@@ -384,6 +395,8 @@ public class ShorteningServiceImpl implements ShorteningService {
                 request.getHeader("User-Agent"),
                 ipHash,
                 request.getHeader("Referer"),
+                null, // country - not resolved at url-service layer
+                null,            // city - not resolved at url-service layer
                 Instant.now(),
                 ownerId
         );
