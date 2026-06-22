@@ -23,8 +23,11 @@ public class CacheWarmingJob {
 
     private final long ttl;
 
-    // lock key in Redis
     private static final String WARM_LOCK_KEY = "lock:cache-warming";
+
+    // \u0000 (null byte)
+    // Format: "urlId\u0000userId\u0000originalUrl"
+    private static final String CACHE_SEP = "\u0000";
 
     public CacheWarmingJob(
             UrlRepository urlRepository,
@@ -36,41 +39,27 @@ public class CacheWarmingJob {
         this.ttl = ttl;
     }
 
-    @EventListener(ApplicationReadyEvent.class) // Executes right after Spring is fully loaded
-    // @SchedulerLock - doesn't work on @EventListener
+    @EventListener(ApplicationReadyEvent.class)
     public void cacheWarmup() {
 
-        // setIfAbsent - atomic, only ONE pod wins
-        // TTL of 5 min - lock auto-releases if pod crashes mid-warmup
         Boolean acquired = stringRedisTemplate.opsForValue()
                 .setIfAbsent(WARM_LOCK_KEY, "locked", Duration.ofMinutes(5));
 
-        // Another pod already warming — skip
         if (!Boolean.TRUE.equals(acquired)) {
-
             log.info("Cache warming already running on another instance, skipping");
-
             return;
         }
 
         try {
 
             Page<Url> mostActiveUrls = urlRepository
-                    .findByIsActiveTrueOrderByClickCountDesc(
-                            PageRequest.of(
-                                    0,
-                                    100
-                            )
-                    );
+                    .findByIsActiveTrueOrderByClickCountDesc(PageRequest.of(0, 100));
 
             mostActiveUrls.forEach(url ->
                     stringRedisTemplate.opsForValue().set(
                             "url:" + url.getSlug(),
-                            url.getId() +
-                                    "|" +
-                                    url.getOriginalUrl() +
-                                    "|" +
-                                    url.getUserId(),
+                            // Format matches ShorteningServiceImpl: id\u0000userId\u0000originalUrl
+                            url.getId() + CACHE_SEP + url.getUserId() + CACHE_SEP + url.getOriginalUrl(),
                             Duration.ofSeconds(ttl)
                     )
             );
@@ -78,8 +67,6 @@ public class CacheWarmingJob {
             log.info("Cache warmed with {} URLs", mostActiveUrls.getNumberOfElements());
 
         } finally {
-
-            // Always release lock - even if warmup fails halfway
             stringRedisTemplate.delete(WARM_LOCK_KEY);
         }
     }
