@@ -35,6 +35,9 @@ class RefreshTokenServiceTest {
     @InjectMocks
     RefreshTokenService refreshTokenService;
 
+    @Mock
+    RefreshTokenRepository refreshTokenRepository;
+
     private static final String TOKEN   = "sample.refresh.token";
 
     private static final String USER_ID = "550e8400-e29b-41d4-a716-446655440000";
