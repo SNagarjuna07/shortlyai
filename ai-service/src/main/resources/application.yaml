@@ -102,11 +102,11 @@ resilience4j:
     instances:
       url-service:
         timeout-duration: 30s
-        cancel-running-future: true
+        cancel-running-future: false
 
       analytics-service:
         timeout-duration: 30s
-        cancel-running-future: true
+        cancel-running-future: false
 
   circuitbreaker:
     instances:
