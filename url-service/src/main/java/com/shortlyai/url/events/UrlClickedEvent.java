@@ -9,6 +9,8 @@ public record UrlClickedEvent(
         String  userAgent,
         String  ipHash,
         String  referer,
+        String country,
+        String city,
         Instant clickedAt,
         UUID userId
 ) {}
