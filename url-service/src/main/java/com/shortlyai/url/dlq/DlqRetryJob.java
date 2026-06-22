@@ -1,5 +1,8 @@
 package com.shortlyai.url.dlq;
 
+import com.shortlyai.url.events.UrlClickedEvent;
+import com.shortlyai.url.events.UrlCreatedEvent;
+import com.shortlyai.url.events.UrlDeletedEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
@@ -9,6 +12,7 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.json.JsonMapper;
+
 import java.time.Instant;
 
 @Component
@@ -16,7 +20,7 @@ import java.time.Instant;
 @RequiredArgsConstructor
 public class DlqRetryJob {
 
-    private static final int MAX_RETRIES = 5; // give up after 5 failed attempts
+    private static final int MAX_RETRIES = 5;
 
     private final FailedEventRepository failedEventRepository;
 
@@ -30,18 +34,22 @@ public class DlqRetryJob {
 
         log.info("DLQ retry fired");
 
-        int pageSize = 100; // process 100 rows per batch
+        int pageSize = 100;
         int pageNumber = 0;
         int totalProcessed = 0;
 
         Page<FailedEvent> page;
 
         do {
-            // Each iteration loads ONE page
-            page = failedEventRepository.findRetryable(
-                    MAX_RETRIES,
-                    PageRequest.of(pageNumber, pageSize)
-            );
+
+            page = failedEventRepository
+                    .findRetryable(
+                            MAX_RETRIES,
+                            PageRequest.of(
+                                    pageNumber,
+                                    pageSize
+                            )
+                    );
 
             if (page.isEmpty()) {
 
@@ -50,15 +58,16 @@ public class DlqRetryJob {
                 break;
             }
 
-            // Each batch in its own transaction - one bad batch doesn't roll back all
             for (FailedEvent event : page.getContent()) {
+
                 retryEvent(event);
             }
 
             totalProcessed += page.getNumberOfElements();
+
             pageNumber++;
 
-        } while (page.hasNext()); // stop when no more pages
+        } while (page.hasNext());
 
         if (totalProcessed > 0) {
 
@@ -68,73 +77,60 @@ public class DlqRetryJob {
 
     private void retryEvent(FailedEvent failedEvent) {
 
-        // Record that we are attempting a retry now
         failedEvent.setLastAttemptAt(Instant.now());
 
-        // Increment retry counter before sending
         failedEvent.setRetryCount(failedEvent.getRetryCount() + 1);
 
-        // Persist retry attempt immediately.
-        // This guarantees retryCount and lastAttemptAt are saved
-        // even if Kafka throws synchronously.
         failedEventRepository.save(failedEvent);
 
         try {
+            // Resolve correct event class from topic name.
+            // Previously deserialized to Object.class -> LinkedHashMap -> consumer
+            // Jackson deserialization failed or produced silent nulls on retry.
+            Class<?> eventClass = resolveEventClass(failedEvent.getTopic());
 
-            // Deserialize JSON payload stored in failed_events
-            Object payload = jsonMapper.readValue(
-                    failedEvent.getPayload(),
-                    Object.class
-            );
+            Object payload = jsonMapper.readValue(failedEvent.getPayload(), eventClass);
 
-            kafkaTemplate.send(
-                            failedEvent.getTopic(),
-                            failedEvent.getEventKey(),
-                            payload
-                    )
+            kafkaTemplate.send(failedEvent.getTopic(), failedEvent.getEventKey(), payload)
                     .whenComplete((result, ex) -> {
 
                         if (ex != null) {
 
-                            // Async Kafka failure
-                            log.warn(
-                                    "DLQ retry failed: topic={} key={} attempt={} error={}",
-                                    failedEvent.getTopic(),
-                                    failedEvent.getEventKey(),
-                                    failedEvent.getRetryCount(),
-                                    ex.getMessage()
-                            );
+                            log.warn("DLQ retry failed: topic={} key={} attempt={} error={}",
+                                    failedEvent.getTopic(), failedEvent.getEventKey(),
+                                    failedEvent.getRetryCount(), ex.getMessage());
 
                         } else {
 
-                            // Successfully republished to Kafka
-                            // Mark processed so scheduler never picks it again
                             failedEvent.setProcessed(true);
-
                             failedEventRepository.save(failedEvent);
 
-                            log.info(
-                                    "DLQ retry success: topic={} key={} attempt={}",
-                                    failedEvent.getTopic(),
-                                    failedEvent.getEventKey(),
-                                    failedEvent.getRetryCount()
-                            );
+                            log.info("DLQ retry success: topic={} key={} attempt={}",
+                                    failedEvent.getTopic(), failedEvent.getEventKey(),
+                                    failedEvent.getRetryCount());
                         }
                     });
 
         } catch (Exception e) {
 
-            // Handles synchronous failures:
-            // - KafkaException
-            // - Serialization exceptions
-            // - Any unexpected runtime exception
-            log.warn(
-                    "DLQ retry immediate failure: topic={} key={} attempt={} error={}",
-                    failedEvent.getTopic(),
-                    failedEvent.getEventKey(),
-                    failedEvent.getRetryCount(),
-                    e.getMessage()
-            );
+            log.warn("DLQ retry immediate failure: topic={} key={} attempt={} error={}",
+                    failedEvent.getTopic(), failedEvent.getEventKey(),
+                    failedEvent.getRetryCount(), e.getMessage());
         }
+    }
+
+    // Maps Kafka topic -> event record class so Jackson deserializes correctly.
+    // If a new topic is added to url-service, add it here or retry falls back to Object.
+    private Class<?> resolveEventClass(String topic) {
+
+        return switch (topic) {
+            case "url.created" -> UrlCreatedEvent.class;
+            case "url.clicks"  -> UrlClickedEvent.class;
+            case "url.deleted" -> UrlDeletedEvent.class;
+            default -> {
+                log.warn("DLQ: unknown topic '{}', deserializing as Object - retry may fail", topic);
+                yield Object.class;
+            }
+        };
     }
 }
