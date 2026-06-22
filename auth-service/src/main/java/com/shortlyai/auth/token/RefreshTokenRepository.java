@@ -9,7 +9,9 @@ import java.util.UUID;
 @Repository
 public interface RefreshTokenRepository extends JpaRepository<RefreshToken, UUID> {
 
-    // Used for cleanup
+    // Cleanup job - deletes expired tokens nightly
     void deleteByExpiresAtBefore(Instant cutOffTime);
 
+    // Added: delete individual token on logout / rotation
+    void deleteByTokenHash(String tokenHash);
 }
