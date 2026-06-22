@@ -153,12 +153,16 @@ public class McpUrlTools {
             return "Could not delete '%s' - url-service temporarily unavailable."
                     .formatted(slug);
 
-        } catch (HttpClientErrorException e) {
+        } catch (CompletionException e) {
 
-            // 404 = slug not found, 403 = not owned by this user - server healthy, don't trip CB
-            log.warn("MCP deleteUrl 4xx userId: {}, slug: {}, status: {}", userId, slug, e.getStatusCode());
+            if (e.getCause() instanceof HttpClientErrorException httpEx) {
 
-            return "Could not delete '%s': %s".formatted(slug, e.getStatusText());
+                log.warn("MCP deleteUrl 4xx userId: {}, slug: {}, status: {}", userId, slug, httpEx.getStatusCode());
+
+                return "Could not delete '%s': %s".formatted(slug, httpEx.getStatusText());
+            }
+
+            throw e;
         }
     }
 }
