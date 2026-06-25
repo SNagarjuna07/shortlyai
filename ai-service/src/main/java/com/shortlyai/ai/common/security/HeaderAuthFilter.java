@@ -28,8 +28,10 @@ public class HeaderAuthFilter extends OncePerRequestFilter {
         String path = request.getRequestURI();
 
         // /mcp/** has its own auth (McpKeyFilter) - skip here
-        if (path.startsWith("/mcp") || path.contains("/actuator")) {
+        if (path.startsWith("/mcp") || path.contains("/actuator") || path.contains("/v3/api-docs")) {
+
             filterChain.doFilter(request, response);
+
             return;
         }
 
