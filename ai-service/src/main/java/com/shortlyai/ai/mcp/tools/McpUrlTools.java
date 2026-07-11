@@ -4,8 +4,8 @@ import com.shortlyai.ai.operations.ResilientUrlOps;
 import com.shortlyai.ai.operations.UrlOperationsService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.tool.annotation.Tool;
-import org.springframework.ai.tool.annotation.ToolParam;
+import org.springframework.ai.mcp.annotation.McpTool;
+import org.springframework.ai.mcp.annotation.McpToolParam;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 
@@ -33,12 +33,12 @@ public class McpUrlTools {
         return userId;
     }
 
-    @Tool(name = "mcp_shortenUrl", description = """
+    @McpTool(name = "shorten_Url", description = """
             Shorten a long URL. Returns the generated short URL and its redirect link.
             Never share the URL id in the response.
             """)
     public String shortenUrl(
-            @ToolParam(description = "The original long URL to shorten (must include http:// or https://)") String originalUrl
+            @McpToolParam(description = "The original long URL to shorten (must include http:// or https://)") String originalUrl
     ) {
 
         String userId = authenticatedUserId();
@@ -63,7 +63,7 @@ public class McpUrlTools {
             if (e.getCause() instanceof HttpClientErrorException httpEx) {
 
                 log.warn(
-                        "MCP shortenUrl 4xx for userId: {}, url: {}, status: {}",
+                        "MCP shorten_Url 4xx for userId: {}, url: {}, status: {}",
                         userId,
                         originalUrl,
                         httpEx.getStatusCode()
@@ -77,12 +77,12 @@ public class McpUrlTools {
         }
     }
 
-    @Tool(name = "mcp_getUrlDetails", description = """
+    @McpTool(name = "get_Url_Details", description = """
             Get details of a shortened URL by its slug.
             Returns the original URL, short URL, and total click count.
             """)
     public String getUrlDetails(
-            @ToolParam(description = "The short slug (e.g. abc123)") String slug
+            @McpToolParam(description = "The short slug (e.g. abc123)") String slug
     ) {
 
         String userId = authenticatedUserId();
@@ -128,12 +128,12 @@ public class McpUrlTools {
         }
     }
 
-    @Tool(name = "mcp_deleteUrl", description = """
+    @McpTool(name = "delete_Url", description = """
             Permanently delete a shortened URL by its slug.
             This action is irreversible - always confirm with the user before calling.
             """)
     public String deleteUrl(
-            @ToolParam(description = "The slug of the URL to delete") String slug
+            @McpToolParam(description = "The slug of the URL to delete") String slug
     ) {
 
         String userId = authenticatedUserId();

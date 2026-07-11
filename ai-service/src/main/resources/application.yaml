@@ -21,6 +21,11 @@ spring:
         version: 1.0.0
         protocol: STREAMABLE
         type: sync
+        capabilities:
+          completion: true
+          prompt: true
+          resource: true
+          tool: true
 
   # Redis - MCP API key validation (McpKeyFilter reads mcp:key:{hash} → userId)
   data:

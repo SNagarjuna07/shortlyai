@@ -4,8 +4,8 @@ import com.shortlyai.ai.operations.AnalyticsOperationsService;
 import com.shortlyai.ai.operations.ResilientAnalyticsOps;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.tool.annotation.Tool;
-import org.springframework.ai.tool.annotation.ToolParam;
+import org.springframework.ai.mcp.annotation.McpTool;
+import org.springframework.ai.mcp.annotation.McpToolParam;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 
@@ -32,12 +32,12 @@ public class McpAnalyticsTools {
         return userId;
     }
 
-    @Tool(name = "mcp_getUrlStats", description = """
+    @McpTool(name = "get_Url_Stats", description = """
             Get total click count for a shortened URL by its numeric urlId.
             Use mcp_getUrlDetails first if you only have the slug - it returns the urlId.
             """)
     public String getUrlStats(
-            @ToolParam(description = "Numeric urlId (Long) of the shortened URL") Long urlId
+            @McpToolParam(description = "Numeric urlId (Long) of the shortened URL") Long urlId
     ) {
 
         String userId = authenticatedUserId();
@@ -77,9 +77,9 @@ public class McpAnalyticsTools {
         }
     }
 
-    @Tool(name = "mcp_getTopUrls", description = "Get the top performing shortened URLs ranked by click count.")
+    @McpTool(name = "get_Top_Urls", description = "Get the top performing shortened URLs ranked by click count.")
     public String getTopUrls(
-            @ToolParam(description = "How many top URLs to return (e.g. 5)") int limit
+            @McpToolParam(description = "How many top URLs to return (e.g. 5)") int limit
     ) {
 
         String userId = authenticatedUserId();
@@ -97,10 +97,10 @@ public class McpAnalyticsTools {
                 return "No URLs found.";
             }
 
-            StringBuilder sb = new StringBuilder("Top %d URLs:\n".formatted(topUrls.size()));
+            StringBuilder sb = new StringBuilder("Top %d URLs:%n".formatted(topUrls.size()));
 
             for (AnalyticsOperationsService.TopUrlResult url : topUrls) {
-                sb.append("- urlId %d: %d clicks\n"
+                sb.append("- urlId %d: %d clicks%n"
                         .formatted(
                                 url.urlId(),
                                 url.clickCount()
