@@ -1,5 +1,6 @@
-package com.shortlyai.ai.mcp;
+package com.shortlyai.ai.mcp.tools;
 
+import com.shortlyai.ai.mcp.McpUserContext;
 import com.shortlyai.ai.operations.ResilientUrlOps;
 import com.shortlyai.ai.operations.UrlOperationsService;
 import lombok.RequiredArgsConstructor;
