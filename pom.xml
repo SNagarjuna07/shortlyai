@@ -35,7 +35,7 @@
   <properties>
     <java.version>25</java.version>
     <spring-cloud.version>2025.1.1</spring-cloud.version>
-    <spring-ai.version>2.0.0-M3</spring-ai.version>
+    <spring-ai.version>2.0.0-M6</spring-ai.version>
     <jjwt.version>0.12.6</jjwt.version>
     <resilience4j.version>2.2.0</resilience4j.version>
     <shedlock.version>6.0.1</shedlock.version>
