@@ -1,12 +1,15 @@
 package com.shortlyai.ai.mcp.tools;
 
-import com.shortlyai.ai.mcp.McpUserContext;
+import com.shortlyai.ai.mcp.auth.McpUserContext;
 import com.shortlyai.ai.operations.ResilientUrlOps;
 import com.shortlyai.ai.operations.UrlOperationsService;
+import io.modelcontextprotocol.spec.McpSchema.ElicitResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.mcp.annotation.McpTool;
 import org.springframework.ai.mcp.annotation.McpToolParam;
+import org.springframework.ai.mcp.annotation.context.McpSyncRequestContext;
+import org.springframework.ai.mcp.annotation.context.StructuredElicitResult;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 
@@ -34,17 +37,34 @@ public class McpUrlTools {
         return userId;
     }
 
-    @McpTool(name = "shorten_Url", description = """
-            Shorten a long URL. Returns the generated short URL and its redirect link.
+    @McpTool(name = "shorten-url", description = """
             Never share the URL id in the response.
+            Creates a shortened URL for a given long URL. Use this when the user wants
+            to shorten, condense, or create a share-friendly link for a URL. Returns the
+            new short URL, its slug and redirect link - keep the urlId if you'll
+            need get_url_stats afterward, and the slug if you'll need get_url_details
+            or delete_url afterward.
             """)
     public String shortenUrl(
-            @McpToolParam(description = "The original long URL to shorten (must include http:// or https://)") String originalUrl
+            @McpToolParam(description = "The original long URL to shorten (must include http:// or https://)")
+            String originalUrl,
+            McpSyncRequestContext context
     ) {
 
         String userId = authenticatedUserId();
 
-        log.info("MCP shortenUrl userId: {}, url: {}", userId, originalUrl);
+        if (context.elicitEnabled()) {
+
+            if (!originalUrl.startsWith("http://")
+                    && !originalUrl.startsWith("https://")
+            ) {
+
+                return "'%s' does not look like a valid URL. URL must start with http:// or https://"
+                        .formatted(originalUrl);
+            }
+        }
+
+        log.info("MCP tool shorten-url called by userId: {}, url: {}", userId, originalUrl);
 
         try {
 
@@ -64,7 +84,7 @@ public class McpUrlTools {
             if (e.getCause() instanceof HttpClientErrorException httpEx) {
 
                 log.warn(
-                        "MCP shorten_Url 4xx for userId: {}, url: {}, status: {}",
+                        "MCP shorten-url 4xx for userId: {}, url: {}, status: {}",
                         userId,
                         originalUrl,
                         httpEx.getStatusCode()
@@ -78,17 +98,23 @@ public class McpUrlTools {
         }
     }
 
-    @McpTool(name = "get_Url_Details", description = """
-            Get details of a shortened URL by its slug.
-            Returns the original URL, short URL, and total click count.
+    @McpTool(name = "get-url-details", description = """
+            Looks up an EXISTING shortened URL by its slug and returns its original
+            URL, short URL, and total click count. Use this when the user refers to a
+            URL by its slug or short link and wants to know what it points to or how
+            it's performing overall. If the user only wants click-count trends/stats
+            and already has the numeric urlId, use get_url_stats instead - it's cheaper
+            and more direct. If the user doesn't have a slug at all, they need
+            shorten_url first, not this.
             """)
     public String getUrlDetails(
-            @McpToolParam(description = "The short slug (e.g. abc123)") String slug
+            @McpToolParam(description = "The short slug (e.g. abc123)")
+            String slug
     ) {
 
         String userId = authenticatedUserId();
 
-        log.info("MCP getUrlDetails userId: {}, slug: {}", userId, slug);
+        log.info("MCP tool get-url-details invoked for userId: {}, slug: {}", userId, slug);
 
         try {
 
@@ -115,7 +141,7 @@ public class McpUrlTools {
             if (e.getCause() instanceof HttpClientErrorException httpEx) {
 
                 log.warn(
-                        "MCP getUrlDetails 4xx userId: {}, slug: {}, status: {}",
+                        "MCP get-url-details 4xx userId: {}, slug: {}, status: {}",
                         userId,
                         slug,
                         httpEx.getStatusCode()
@@ -129,37 +155,78 @@ public class McpUrlTools {
         }
     }
 
-    @McpTool(name = "delete_Url", description = """
-            Permanently delete a shortened URL by its slug.
-            This action is irreversible - always confirm with the user before calling.
-            """)
+    // record used by the elicitation
+    public record DeleteConfirmation(boolean confirmDeletion) {}
+
+    @McpTool(name = "delete-url", description = """
+        Permanently and irreversibly deletes a shortened URL by its slug. This tool
+        asks the user to confirm via an interactive prompt itself - call it directly
+        as soon as the user expresses intent to delete, do not ask them to confirm
+        yourself in conversation first, the tool's own confirmation step handles that.
+        """)
     public String deleteUrl(
-            @McpToolParam(description = "The slug of the URL to delete") String slug
+            @McpToolParam(description = "The slug of the URL to delete")
+            String slug,
+            McpSyncRequestContext context
     ) {
 
         String userId = authenticatedUserId();
 
-        log.warn("MCP deleteUrl userId: {}, slug: {}", userId, slug);
+        log.warn("MCP tool deleteUrl invoked for userId: {}, slug: {}", userId, slug);
 
         try {
 
-            Boolean deleted = resilientUrlOps
-                    .delete(slug, userId)
+            // Look up what we're about to delete FIRST - the confirmation prompt
+            // should show the actual destination URL
+            UrlOperationsService.UrlDetails details = resilientUrlOps
+                    .getDetails(slug, userId)
                     .join();
 
-            if (Boolean.TRUE.equals(deleted)) {
+            if (details == null) {
+                return "Could not find a URL with slug '%s' to delete."
+                        .formatted(slug);
+            }
 
+            if (context.elicitEnabled()) {
+
+                StructuredElicitResult<DeleteConfirmation> confirmation = context.elicit(
+                        e -> e.message(
+                                "Delete '%s' -> %s ? This cannot be undone."
+                                        .formatted(slug, details.originalUrl())
+                        ),
+                        DeleteConfirmation.class
+                );
+
+                boolean confirmed = confirmation.action() == ElicitResult.Action.ACCEPT
+                        && confirmation
+                        .structuredContent()
+                        .confirmDeletion();
+
+                if (!confirmed) {
+
+                    log.info("MCP deleteUrl userId: {}, slug: {} - user declined confirmation", userId, slug);
+
+                    return "Deletion of '%s' was not confirmed - nothing was deleted.".formatted(slug);
+                }
+
+            } else {
+                // Client doesn't support elicitation - falls back to trusting the tool
+                log.warn("MCP delete-url userId: {}, slug: {} - client has no elicitation support", userId, slug);
+            }
+
+            Boolean deleted = resilientUrlOps.delete(slug, userId).join();
+
+            if (Boolean.TRUE.equals(deleted)) {
                 return "Deleted URL with slug: " + slug;
             }
 
-            return "Could not delete '%s' - url-service temporarily unavailable."
-                    .formatted(slug);
+            return "Could not delete '%s' - url-service temporarily unavailable.".formatted(slug);
 
         } catch (CompletionException e) {
 
             if (e.getCause() instanceof HttpClientErrorException httpEx) {
 
-                log.warn("MCP deleteUrl 4xx userId: {}, slug: {}, status: {}", userId, slug, httpEx.getStatusCode());
+                log.warn("MCP delete-url 4xx userId: {}, slug: {}, status: {}", userId, slug, httpEx.getStatusCode());
 
                 return "Could not delete '%s': %s".formatted(slug, httpEx.getStatusText());
             }

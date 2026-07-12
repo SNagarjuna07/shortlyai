@@ -1,8 +1,10 @@
 package com.shortlyai.ai.mcp.tools;
 
-import com.shortlyai.ai.mcp.McpUserContext;
+import com.shortlyai.ai.mcp.auth.McpUserContext;
 import com.shortlyai.ai.operations.AnalyticsOperationsService;
 import com.shortlyai.ai.operations.ResilientAnalyticsOps;
+import com.shortlyai.ai.operations.ResilientUrlOps;
+import com.shortlyai.ai.operations.UrlOperationsService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.mcp.annotation.McpTool;
@@ -20,6 +22,8 @@ public class McpAnalyticsTools {
 
     private final ResilientAnalyticsOps resilientAnalyticsOps;
 
+    private final ResilientUrlOps resilientUrlOps;
+
     // userId from McpKeyFilter-injected context — not from LLM input
     private String authenticatedUserId() {
 
@@ -33,59 +37,79 @@ public class McpAnalyticsTools {
         return userId;
     }
 
-    @McpTool(name = "get_Url_Stats", description = """
-            Get total click count for a shortened URL by its numeric urlId.
-            Use mcp_getUrlDetails first if you only have the slug - it returns the urlId.
+    @McpTool(name = "get-url-stats", description = """
+            Returns the total click count for a shortened URL by its slug. Use this
+            for quick click-count checks. If you also need the original destination
+            URL, call get_url_details instead - it returns both in one call, making
+            a separate get_url_stats call unnecessary in that case.
             """)
     public String getUrlStats(
-            @McpToolParam(description = "Numeric urlId (Long) of the shortened URL") Long urlId
+            @McpToolParam(description = "The short slug of the URL (e.g. 'abc123')", required = true)
+            String slug
     ) {
 
         String userId = authenticatedUserId();
 
-        log.info("MCP getUrlStats userId: {}, urlId: {}", userId, urlId);
+        log.info("MCP tool get-url-stats invoked for userId: {}, slug: {}", userId, slug);
 
         try {
 
+            // analytics-service's getStats is keyed by numeric urlId, not slug -
+            // resolve it via url-service first.
+            UrlOperationsService.UrlDetails details = resilientUrlOps
+                    .getDetails(slug, userId)
+                    .join();
+
+            if (details == null) {
+                return "Could not find a URL with slug '%s'.".formatted(slug);
+            }
+
             AnalyticsOperationsService.StatsResult stats = resilientAnalyticsOps
-                    .getStats(urlId, userId)
+                    .getStats(details.id(), userId)
                     .join();
 
             if (stats == null) {
-                return "Click stats for URL %d temporarily unavailable."
-                        .formatted(urlId);
+                return "Click stats for '%s' temporarily unavailable."
+                        .formatted(slug);
             }
 
-            return "URL with ID %d has %d total clicks"
-                    .formatted(stats.urlId(), stats.totalClicks());
+            return "URL '%s' has %d total clicks"
+                    .formatted(slug, stats.totalClicks());
 
         } catch (CompletionException e) {
 
             if (e.getCause() instanceof HttpClientErrorException httpEx) {
 
                 log.warn(
-                        "MCP getUrlStats 4xx userId: {}, urlId: {}, status: {}",
+                        "MCP get-url-stats 4xx userId: {}, slug: {}, status: {}",
                         userId,
-                        urlId,
+                        slug,
                         httpEx.getStatusCode()
                 );
 
-                return "Could not retrieve stats for URL %d: %s"
-                        .formatted(urlId, httpEx.getStatusText());
+                return "Could not retrieve stats for '%s': %s"
+                        .formatted(slug, httpEx.getStatusText());
             }
 
             throw e;
         }
     }
 
-    @McpTool(name = "get_Top_Urls", description = "Get the top performing shortened URLs ranked by click count.")
+    @McpTool(name = "get-top-urls", description = """ 
+            Returns the user's best-performing shortened URLs, ranked by total click
+            count, highest first. Use this for "what's my most popular/top link"
+            type requests, or when the user wants an overview rather than one specific
+            URL. Each result includes the slug, original URL, shortened URL and click
+            count - no follow-up call needed for basic info.
+            """)
     public String getTopUrls(
-            @McpToolParam(description = "How many top URLs to return (e.g. 5)") int limit
+            @McpToolParam(description = "How many top URLs to return (e.g. 5)", required = true)
+            int limit
     ) {
 
         String userId = authenticatedUserId();
 
-        log.info("MCP getTopUrls userId: {}, limit: {}", userId, limit);
+        log.info("MCP get-top-urls invoked for userId: {}, limit: {}", userId, limit);
 
         try {
 
@@ -101,9 +125,26 @@ public class McpAnalyticsTools {
             StringBuilder sb = new StringBuilder("Top %d URLs:%n".formatted(topUrls.size()));
 
             for (AnalyticsOperationsService.TopUrlResult url : topUrls) {
-                sb.append("- urlId %d: %d clicks%n"
+
+                // N calls to url-service here, one per top-url entry - see note
+                // above the class. Fine at small limits, worth revisiting if the
+                // max limit ever grows.
+                UrlOperationsService.UrlDetails details = resilientUrlOps
+                        .getDetailsById(url.urlId(), userId)
+                        .join();
+
+                if (details == null) {
+
+                    log.warn("MCP get-top-urls: urlId {} in analytics but not found in url-service, skipping", url.urlId());
+
+                    continue;
+                }
+
+                sb.append("- %s -> %s (short: %s): %d clicks%n"
                         .formatted(
-                                url.urlId(),
+                                details.slug(),
+                                details.originalUrl(),
+                                details.shortUrl(),
                                 url.clickCount()
                         )
                 );
@@ -116,7 +157,7 @@ public class McpAnalyticsTools {
             if (e.getCause() instanceof HttpClientErrorException httpEx) {
 
                 log.warn(
-                        "MCP getTopUrls 4xx userId: {}, limit: {}, status: {}",
+                        "MCP get-top-urls 4xx userId: {}, limit: {}, status: {}",
                         userId,
                         limit,
                         httpEx.getStatusCode()
