@@ -1,11 +1,15 @@
 package com.shortlyai.ai.operations;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.shortlyai.ai.mcp.resources.UrlResources;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
+
+import java.util.List;
 
 // Shared HTTP ops for url-service
 // No CB/retry here - resilience handled by ResilientUrlOps
@@ -59,6 +63,17 @@ public class UrlOperationsService {
                 .body(UrlDetails.class);
     }
 
+    public UrlDetails getDetailsById(Long urlId, String userId) {
+
+        log.debug("getDetails userId: {}, urlId: {}", userId, urlId);
+
+        return urlServiceClient.get()
+                .uri(apiPrefix + "/urls/id/{id}", urlId)
+                .header("X-User-Id", userId)
+                .retrieve()
+                .body(UrlDetails.class);
+    }
+
     public void delete(String slug, String userId) {
 
         log.debug("delete userId: {}, slug: {}", userId, slug);
@@ -69,4 +84,24 @@ public class UrlOperationsService {
                 .retrieve()
                 .toBodilessEntity();
     }
+
+
+    public List<UrlResources.UrlResource> getAllUrlsForUser(String userId) {
+
+        log.info("Fetching all URLs for userId: {}", userId);
+
+        PageResponse<UrlResources.UrlResource> page = urlServiceClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path(apiPrefix + "/urls")
+                        .queryParam("size", 1000)
+                        .build()
+                )
+                .header("X-User-Id", userId)
+                .retrieve()
+                .body(new ParameterizedTypeReference<>() {});
+
+        return page != null ? page.content() : List.of();
+    }
+
+    private record PageResponse<T>(List<T> content) {}
 }
