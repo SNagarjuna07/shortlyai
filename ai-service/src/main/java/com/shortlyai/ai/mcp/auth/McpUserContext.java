@@ -1,4 +1,4 @@
-package com.shortlyai.ai.mcp;
+package com.shortlyai.ai.mcp.auth;
 
 // ThreadLocal holder - carries authenticated userId from McpKeyFilter into MCP tool methods.
 // Virtual threads (which this service uses) get their own ThreadLocal slot per thread.

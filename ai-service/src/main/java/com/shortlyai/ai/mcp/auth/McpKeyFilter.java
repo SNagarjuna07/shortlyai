@@ -1,4 +1,4 @@
-package com.shortlyai.ai.mcp;
+package com.shortlyai.ai.mcp.auth;
 
 import jakarta.servlet.*;
 import jakarta.servlet.http.HttpServletRequest;
