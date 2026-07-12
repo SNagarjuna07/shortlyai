@@ -26,6 +26,7 @@ spring:
           prompt: true
           resource: true
           tool: true
+        request-timeout: 50s
 
   # Redis - MCP API key validation (McpKeyFilter reads mcp:key:{hash} → userId)
   data:
