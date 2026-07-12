@@ -21,8 +21,7 @@ public class CorsConfig {
         // Allowed origins
         config.setAllowedOrigins(List.of(
                 "http://localhost:3000",  // React dev server
-                "http://localhost:5173",   // Vite dev server
-                "https://claude.ai"
+                "http://localhost:5173"   // Vite dev server
         ));
 
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));

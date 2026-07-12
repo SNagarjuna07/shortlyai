@@ -10,10 +10,10 @@ app:
 spring:
   application:
     name: auth-service
+
   threads:
     virtual:
       enabled: true
-
 
   # Postgres — users, roles, refresh tokens
   datasource:
