@@ -86,6 +86,19 @@ public interface UrlRepository extends JpaRepository<Url, Long> {
 
     Optional<Url> findBySlugAndUserId(String slug, UUID userId);
 
+    // Soft delete by slug — mirrors softDeleteByIdAndUserId.
+    // Keeps both delete paths (by id, by slug) consistent: neither
+    // hard-deletes, so analytics/click-history FKs never dangle.
+    @Modifying
+    @Query("""
+               UPDATE Url u
+               SET u.isActive = false,
+               u.updatedAt = :now
+               WHERE u.slug = :slug
+               AND u.userId = :userId
+    """)
+    int softDeleteBySlugAndUserId(@Param("slug") String slug, @Param("userId") UUID userId, @Param("now") Instant now);
+
     @Modifying
     @Query("""
         UPDATE Url u

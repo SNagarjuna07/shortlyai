@@ -134,7 +134,7 @@ public class UrlController {
     @DeleteMapping("/slug/{slug}")
     public ResponseEntity<Void> deleteUrl(
             @PathVariable String slug,
-            @RequestHeader("X-User-Id") UUID userId
+            @AuthenticationPrincipal UUID userId
     ) {
 
         log.debug("Deleting slug '{}'", slug);

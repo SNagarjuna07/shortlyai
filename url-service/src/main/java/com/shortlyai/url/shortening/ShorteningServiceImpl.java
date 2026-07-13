@@ -131,10 +131,30 @@ public class ShorteningServiceImpl implements ShorteningService {
         // First save to generate database ID
         Url savedUrl = urlRepository.save(url);
 
-        // Generate Base62 slug from ID if custom slug was not provided
+        // Generate a random (non-sequential) slug if custom slug was not provided.
+        // Never derive it from savedUrl.getId() via Base62.encode() — auto-increment
+        // IDs encoded that way are sequential and fully enumerable (id=1,2,3...),
+        // letting anyone walk the entire URL table. Retry on the (extremely rare)
+        // collision instead.
         if (!isCustom) {
 
-            savedUrl.setSlug(Base62.encode(savedUrl.getId()));
+            String generatedSlug;
+            int attempts = 0;
+
+            do {
+                generatedSlug = Base62.generateRandomSlug();
+                attempts++;
+
+                if (attempts > 5) {
+                    // 62^7 space — this should be virtually unreachable.
+                    // Bail loudly rather than loop forever if it ever fires.
+                    throw new IllegalStateException(
+                            "Failed to generate unique slug after " + attempts + " attempts");
+                }
+
+            } while (urlRepository.existsBySlug(generatedSlug));
+
+            savedUrl.setSlug(generatedSlug);
 
             savedUrl = urlRepository.save(savedUrl);
         }
@@ -284,18 +304,24 @@ public class ShorteningServiceImpl implements ShorteningService {
         Url url = urlRepository.findBySlugAndUserId(slug, userId)
                 .orElseThrow(() -> new UrlNotFoundException("URL slug " + slug + " not found"));
 
-        // delete from Postgres
-        urlRepository.delete(url);
+        // Soft-delete, same as delete(id, userId). Never hard-delete here:
+        // analytics-service keeps click history keyed off this row, and a
+        // hard delete would leave dangling references / break click stats.
+        int rowsDeleted = urlRepository.softDeleteBySlugAndUserId(slug, userId, Instant.now());
+
+        if (rowsDeleted == 0) {
+            throw new UrlNotFoundException("URL slug " + slug + " not found");
+        }
 
         // evict Redis cache
-        String cacheKey = "url:" + slug;
+        String cacheKey = CACHE_PREFIX + slug;
 
         stringRedisTemplate.delete(cacheKey);
 
         // publish url.deleted event (Kafka)
         publishDeletedEvent(url);
 
-        log.info("Deleted URL slug: {} urlId: {} userId: {}", slug, url.getId(), userId);
+        log.info("Soft-deleted URL slug: {} urlId: {} userId: {}", slug, url.getId(), userId);
     }
 
     private ShortenResponse mapToResponse(Url u) {
@@ -449,4 +475,3 @@ public class ShorteningServiceImpl implements ShorteningService {
         }
     }
 }
-

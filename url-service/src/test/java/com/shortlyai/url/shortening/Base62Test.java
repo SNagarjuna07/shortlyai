@@ -2,8 +2,7 @@ package com.shortlyai.url.shortening;
 
 import org.junit.jupiter.api.Test;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.*;
 
 /**
  * Pure unit tests — no Spring context, no mocks.
@@ -89,5 +88,44 @@ class Base62Test {
         String slug = Base62.encode(Long.MAX_VALUE);
 
         assertThat(slug.length()).isLessThanOrEqualTo(20);
+    }
+
+    @Test
+    void generateRandomSlug_isSevenCharsAlphanumeric() {
+
+        String slug = Base62.generateRandomSlug();
+
+        assertThat(slug).hasSize(7);
+        assertThat(slug).matches("[0-9a-zA-Z]+");
+    }
+
+    @Test
+    void generateRandomSlug_repeatedCalls_areNotSequential() {
+
+        // Regression guard for the enumeration bug: consecutive calls
+        // must not look like Base62.encode(1), encode(2), encode(3)...
+        String s1 = Base62.generateRandomSlug();
+        String s2 = Base62.generateRandomSlug();
+        String s3 = Base62.generateRandomSlug();
+
+        assertThat(s1).isNotEqualTo(Base62.encode(1L));
+        assertThat(s2).isNotEqualTo(Base62.encode(2L));
+        assertThat(s3).isNotEqualTo(Base62.encode(3L));
+
+        // Extremely unlikely all three collide with each other
+        assertThat(java.util.Set.of(s1, s2, s3)).hasSizeGreaterThanOrEqualTo(2);
+    }
+
+    @Test
+    void generateRandomSlug_manyCalls_haveNoCollisionsInSmallSample() {
+
+        // Sanity check on entropy, not a proof - 62^7 space vs 10k samples
+        java.util.Set<String> slugs = new java.util.HashSet<>();
+
+        for (int i = 0; i < 10_000; i++) {
+            slugs.add(Base62.generateRandomSlug());
+        }
+
+        assertThat(slugs).hasSize(10_000);
     }
 }

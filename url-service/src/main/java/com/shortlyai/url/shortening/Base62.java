@@ -1,5 +1,7 @@
 package com.shortlyai.url.shortening;
 
+import java.security.SecureRandom;
+
 // Pure utility class — no Spring, no dependencies, fully testable
 // Converts a long ID into a short Base62 string and back
 public final class Base62 {
@@ -11,12 +13,35 @@ public final class Base62 {
 
     private static final int BASE = ALPHABET.length(); // 62
 
-    // Private constructor — no one should instantiate this class
+    // CSPRNG, not Random/ThreadLocalRandom — slugs must not be predictable
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+
+    // 7 chars of Base62 = 62^7 ≈ 3.5 * 10^12 possibilities.
+    // At millions of URLs, collision probability stays negligible.
+    private static final int RANDOM_SLUG_LENGTH = 7;
+
+    // Private constructor - no one should instantiate this class
     private Base62() {}
+
+    // Generate a random, non-sequential Base62 slug.
+    // DO NOT use encode(id) for auto-generated slugs — sequential IDs
+    // encoded this way are trivially enumerable (id=1,2,3... -> slugs).
+    // This is what shorten() should call instead.
+    public static String generateRandomSlug() {
+
+        StringBuilder result = new StringBuilder(RANDOM_SLUG_LENGTH);
+
+        for (int i = 0; i < RANDOM_SLUG_LENGTH; i++) {
+            result.append(ALPHABET.charAt(SECURE_RANDOM.nextInt(BASE)));
+        }
+
+        return result.toString();
+    }
 
     // Encode: Long → Base62 string
     // e.g. 12345 → "dnh"
     public static String encode(long id) {
+
         if (id <= 0) throw new IllegalArgumentException("ID must be positive: " + id);
 
         StringBuilder result = new StringBuilder();
@@ -24,7 +49,9 @@ public final class Base62 {
         // Repeatedly divide by 62, collect remainders as characters
         // Same logic as converting decimal to binary — just base 62
         while (id > 0) {
+
             result.append(ALPHABET.charAt((int) (id % BASE))); // remainder → character
+
             id /= BASE; // shrink the number
         }
 
