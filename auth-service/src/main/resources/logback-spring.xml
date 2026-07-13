@@ -18,7 +18,7 @@
                      %msg  — log message
                      %n    — newline -->
                 <pattern>
-                    %clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr(%5p) %clr(${PID:- }){magenta} %clr(---){faint} %clr([%15.15t]){faint} %clr(%-40.40logger{39}){cyan} %clr(:){faint} [traceId=%mdc{traceId:-none}] %msg%n%throwable
+                    %clr(%d{yyyy-MM-dd HH:mm:ss.SSS,Asia/Kolkata}){faint} %clr(%5p) %clr(${PID:- }){magenta} %clr(---){faint} %clr([%15.15t]){faint} %clr(%-40.40logger{39}){cyan} %clr(:){faint} [traceId=%mdc{traceId:-none}] %msg%n%throwable
                 </pattern>
             </encoder>
         </appender>
@@ -32,7 +32,7 @@
                 <totalSizeCap>500MB</totalSizeCap><!-- delete oldest if total exceeds 500MB -->
             </rollingPolicy>
             <encoder>
-                <pattern>%d{HH:mm:ss.SSS} %5p --- %-40.40logger{39} : [trace=%mdc{traceId:-none}] %msg%n%throwable</pattern>
+                <pattern>%d{HH:mm:ss.SSS,Asia/Kolkata} %5p --- %-40.40logger{39} : [trace=%mdc{traceId:-none}] %msg%n%throwable</pattern>
             </encoder>
         </appender>
 
@@ -71,7 +71,7 @@
                 <totalSizeCap>500MB</totalSizeCap><!-- delete oldest if total exceeds 500MB -->
             </rollingPolicy>
             <encoder>
-                <pattern>%d{HH:mm:ss.SSS} %5p --- %-40.40logger{39} : [trace=%mdc{traceId:-none}] %msg%n%throwable</pattern>
+                <pattern>%d{HH:mm:ss.SSS,Asia/Kolkata} %5p --- %-40.40logger{39} : [trace=%mdc{traceId:-none}] %msg%n%throwable</pattern>
             </encoder>
         </appender>
 
