@@ -3,7 +3,6 @@ package com.shortlyai.ai.summary;
 import com.shortlyai.ai.operations.AnalyticsOperationsService;
 import com.shortlyai.ai.operations.ResilientAnalyticsOps;
 import com.shortlyai.ai.summary.dto.SummaryResponse;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.prompt.PromptTemplate;

@@ -2,7 +2,6 @@ package com.shortlyai.ai.slug;
 
 import com.shortlyai.ai.slug.dto.SlugRequest;
 import com.shortlyai.ai.slug.dto.SlugResponse;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.prompt.PromptTemplate;

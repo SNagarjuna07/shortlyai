@@ -2,7 +2,10 @@ package com.shortlyai.auth.authentication;
 
 import com.shortlyai.auth.audit.AuditEventType;
 import com.shortlyai.auth.audit.AuditLogService;
-import com.shortlyai.auth.common.exception.*;
+import com.shortlyai.auth.common.exception.EmailAlreadyExistsException;
+import com.shortlyai.auth.common.exception.InvalidCredentialsException;
+import com.shortlyai.auth.common.exception.InvalidTokenException;
+import com.shortlyai.auth.common.exception.UserNotFoundException;
 import com.shortlyai.auth.dto.*;
 import com.shortlyai.auth.email.VerificationService;
 import com.shortlyai.auth.security.JwtUtil;
@@ -23,8 +26,10 @@ import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
-import static org.assertj.core.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)

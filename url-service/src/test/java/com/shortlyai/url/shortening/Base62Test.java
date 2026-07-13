@@ -2,7 +2,8 @@ package com.shortlyai.url.shortening;
 
 import org.junit.jupiter.api.Test;
 
-import static org.assertj.core.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Pure unit tests — no Spring context, no mocks.

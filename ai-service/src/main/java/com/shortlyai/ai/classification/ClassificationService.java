@@ -2,7 +2,6 @@ package com.shortlyai.ai.classification;
 
 import com.shortlyai.ai.classification.dto.ClassificationRequest;
 import com.shortlyai.ai.classification.dto.ClassificationResponse;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.prompt.PromptTemplate;

@@ -2,7 +2,10 @@ package com.shortlyai.auth.email;
 
 import com.shortlyai.auth.common.exception.InvalidTokenException;
 import com.shortlyai.auth.common.exception.UserNotFoundException;
-import com.shortlyai.auth.user.*;
+import com.shortlyai.auth.user.Provider;
+import com.shortlyai.auth.user.Role;
+import com.shortlyai.auth.user.User;
+import com.shortlyai.auth.user.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -20,7 +23,8 @@ import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
-import static org.assertj.core.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
