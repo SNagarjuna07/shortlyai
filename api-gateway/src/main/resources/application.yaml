@@ -44,6 +44,11 @@ spring:
               predicates:
                 - Path=/api/v1/urls/**
 
+            - id: url-service
+              uri: lb://url-service
+              predicates:
+                - Path=/api/v1/r/**
+
               filters:
                 - name: CircuitBreaker
                   args:
