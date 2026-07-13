@@ -9,20 +9,34 @@ import io.modelcontextprotocol.spec.McpSchema.Role;
 import io.modelcontextprotocol.spec.McpSchema.TextContent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.ai.chat.prompt.PromptTemplate;
 import org.springframework.ai.mcp.annotation.McpPrompt;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class AnalyticsPrompts {
 
     private static final int SUMMARY_TOP_N = 5;
 
     private final ResilientAnalyticsOps resilientAnalyticsOps;
+
+    private final Resource analyticsPrompt;
+
+    public AnalyticsPrompts(
+            ResilientAnalyticsOps resilientAnalyticsOps,
+            @Value("classpath:prompts/analytics-mcp-prompt/analytics-prompt.st")
+            Resource analyticsPrompt
+    ) {
+        this.resilientAnalyticsOps = resilientAnalyticsOps;
+        this.analyticsPrompt = analyticsPrompt;
+    }
 
     @McpPrompt(
             name = "performance-summary",
@@ -42,18 +56,17 @@ public class AnalyticsPrompts {
         String urlLines = topUrls.isEmpty()
                 ? "No URLs with recorded clicks yet."
                 : topUrls.stream()
-                        .map(u -> "- urlId %d: %d clicks".formatted(u.urlId(), u.clickCount()))
-                        .collect(Collectors.joining("\n"));
+                .map(u -> "- urlId %d: %d clicks".formatted(u.urlId(), u.clickCount()))
+                .collect(Collectors.joining("\n"));
 
-        String prompt = """
-                Here are the user's top %d performing shortened URLs by click count:
-                
-                %s
-                
-                Summarize the overall performance in plain language, call out anything
-                unusual (e.g. one URL dominating the rest, or very low engagement across
-                the board), and suggest one concrete next action.
-                """.formatted(SUMMARY_TOP_N, urlLines);
+        PromptTemplate template = new PromptTemplate(analyticsPrompt);
+
+        String prompt = template
+                .render(
+                        Map.of(
+                                "top", SUMMARY_TOP_N,
+                                "urlLines", urlLines)
+                );
 
         return new GetPromptResult(
                 "Performance Summary",

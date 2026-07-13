@@ -2,33 +2,42 @@ package com.shortlyai.ai.safety;
 
 import com.shortlyai.ai.safety.dto.SafetyCheckRequest;
 import com.shortlyai.ai.safety.dto.SafetyCheckResponse;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.prompt.PromptTemplate;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 
+import java.util.Map;
+
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class SafetyService {
 
     private final ChatClient chatClient;
 
+    private final Resource safetyPrompt;
+
+    public SafetyService(
+            ChatClient chatClient,
+            @Value("classpath:prompts/safety-service-prompt/safety-prompt.st")
+            Resource safetyPrompt
+    ) {
+        this.chatClient = chatClient;
+        this.safetyPrompt = safetyPrompt;
+    }
+
     public SafetyCheckResponse check(SafetyCheckRequest request) {
 
         log.info("Running safety check for url: {}", request.url());
 
-        // Note: text-only heuristic check (no live browsing/scanning)
-        String prompt = """
-                Analyze this URL for signs of phishing, scams, or malware
-                based on its structure (domain, TLD, subdomains, suspicious
-                keywords like 'login', 'verify', 'free', IP-based domains, etc).
+        PromptTemplate template = new PromptTemplate(safetyPrompt);
 
-                URL: %s
-
-                Return: safe (true/false), riskLevel (LOW/MEDIUM/HIGH),
-                and a one-sentence reasoning.
-                """.formatted(request.url());
+        String prompt = template
+                .render(
+                        Map.of("url", request.url())
+                );
 
         SafetyCheckResponse response = chatClient.prompt()
                 .user(prompt)

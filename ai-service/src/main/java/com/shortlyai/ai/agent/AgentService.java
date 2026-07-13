@@ -27,7 +27,7 @@
                 ChatClient chatClient,
                 UrlServiceTools urlServiceTools,
                 AnalyticsServiceTools analyticsServiceTools,
-                @Value("classpath:prompts/agent-system.st")
+                @Value("classpath:prompts/agent-service-prompt/agent-prompt.st")
                 Resource agentPrompt
         ) {
             this.chatClient = chatClient;

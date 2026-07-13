@@ -6,17 +6,34 @@ import com.shortlyai.ai.summary.dto.SummaryResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.prompt.PromptTemplate;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 
+import java.util.Map;
 import java.util.concurrent.CompletionException;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class SummaryService {
 
     private final ChatClient chatClient;
+
     private final ResilientAnalyticsOps resilientAnalyticsOps;
+
+    private final Resource summaryPrompt;
+
+    public SummaryService(
+            ChatClient chatClient,
+            ResilientAnalyticsOps resilientAnalyticsOps,
+            @Value("classpath:prompts/summary-service-prompt/summary-prompt.st")
+            Resource summaryPrompt
+    ) {
+        this.chatClient = chatClient;
+        this.resilientAnalyticsOps = resilientAnalyticsOps;
+        this.summaryPrompt = summaryPrompt;
+    }
 
     public SummaryResponse summarize(Long urlId, String userId) {
 
@@ -40,12 +57,12 @@ public class SummaryService {
                 return summarizeFallback();
             }
 
-            String prompt = """
-                    Write a short, friendly 2-sentence summary of this URL's
-                    performance for a dashboard.
+            PromptTemplate template = new PromptTemplate(summaryPrompt);
 
-                    Total clicks: %d
-                    """.formatted(stats.totalClicks());
+            String prompt = template
+                    .render(
+                            Map.of("clicks", stats.totalClicks())
+                    );
 
             String text = chatClient
                     .prompt()

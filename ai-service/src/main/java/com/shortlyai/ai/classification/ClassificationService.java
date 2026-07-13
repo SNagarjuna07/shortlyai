@@ -5,36 +5,41 @@ import com.shortlyai.ai.classification.dto.ClassificationResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.prompt.PromptTemplate;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 
+import java.util.Map;
+
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class ClassificationService {
 
     private final ChatClient chatClient;
 
+    private final Resource classificationPrompt;
+
+    public ClassificationService(
+            ChatClient chatClient,
+            @Value("classpath:prompts/classification-service-prompt/classification-prompt.st")
+            Resource classificationPrompt
+    ) {
+        this.chatClient = chatClient;
+        this.classificationPrompt = classificationPrompt;
+    }
+
     public ClassificationResponse classify(ClassificationRequest request) {
 
         log.info("Classifying URL: {}", request.url());
 
-        String prompt = """
-                You are a URL classification assistant for a URL shortener.
-                
-                Generate a short, descriptive title (max 60 chars) for this URL,
-                as if it were the webpage's <title> tag - based on the URL alone.
-                
-                Classify this URL into ONE category from:
-                SOCIAL_MEDIA, NEWS, ECOMMERCE, ENTERTAINMENT, EDUCATION,
-                TECHNOLOGY, FINANCE, GOVERNMENT, ADULT, MALICIOUS, OTHER.
-                
-                Also give a confidence score (0.0 to 1.0) and up to 3
-                short topic tags describing likely content.
-                
-                URL: %s
-                """.formatted(request.url());
+        PromptTemplate template = new PromptTemplate(classificationPrompt);
 
-        // .entity() = Spring AI auto-converts model JSON output into this record
+        String prompt = template
+                .render(
+                        Map.of("url", request.url())
+                );
+
         ClassificationResponse response = chatClient.prompt()
                 .user(prompt)
                 .call()

@@ -13,7 +13,7 @@ public class ChatClientConfig {
     private final Resource systemPrompt;
 
     public ChatClientConfig(
-            @Value("classpath:prompts/system.st")
+            @Value("classpath:prompts/base-prompt/system.st")
             Resource systemPrompt
     ) {
         this.systemPrompt = systemPrompt;
