@@ -12,8 +12,12 @@ import org.mockito.quality.Strictness;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.HexFormat;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -57,8 +61,15 @@ class RefreshTokenServiceTest {
 
         refreshTokenService.store(TOKEN, USER_ID);
 
-        // key must be namespaced "refresh:<token>", value = userId, TTL > 0
-        verify(valueOps).set(eq("refresh:" + TOKEN), eq(USER_ID), any(Duration.class));
+        String expectedKey = "refresh:" + sha256Hex(TOKEN);
+
+        verify(valueOps).set(
+                eq(expectedKey),
+                eq(USER_ID),
+                any(Duration.class)
+        );
+
+        verify(refreshTokenRepository).save(any(RefreshToken.class));
     }
 
     @Test
@@ -94,9 +105,14 @@ class RefreshTokenServiceTest {
     @Test
     void exists_tokenPresentInRedis_returnsTrue() {
 
-        when(redis.hasKey("refresh:" + TOKEN)).thenReturn(true);
+        String expectedKey = "refresh:" + sha256Hex(TOKEN);
+
+        when(redis.hasKey(expectedKey)).thenReturn(true);
 
         assertThat(refreshTokenService.exists(TOKEN)).isTrue();
+
+        verify(redis).hasKey(expectedKey);
+        verifyNoInteractions(refreshTokenRepository);
     }
 
     @Test
@@ -121,6 +137,27 @@ class RefreshTokenServiceTest {
 
         refreshTokenService.delete(TOKEN);
 
-        verify(redis).delete("refresh:" + TOKEN);
+        String expectedKey = "refresh:" + sha256Hex(TOKEN);
+
+        verify(redis).delete(expectedKey);
+
+        verify(refreshTokenRepository)
+                .deleteByTokenHash(sha256Hex(TOKEN));
+    }
+
+    private String sha256Hex(String input) {
+
+        try {
+
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+
+            byte[] hash = digest.digest(input.getBytes(StandardCharsets.UTF_8));
+
+            return HexFormat.of().formatHex(hash);
+
+        } catch (NoSuchAlgorithmException e) {
+
+            throw new IllegalStateException(e);
+        }
     }
 }
