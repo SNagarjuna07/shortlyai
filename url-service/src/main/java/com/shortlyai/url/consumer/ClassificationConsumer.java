@@ -17,7 +17,7 @@ public class ClassificationConsumer {
     private final UrlRepository urlRepository;
 
     @KafkaListener(
-            topics = "url.classified",
+            topics = "${spring.kafka.topics.url-classified}",
             containerFactory = "classifiedKafkaListenerContainerFactory"
     )
     @Transactional
