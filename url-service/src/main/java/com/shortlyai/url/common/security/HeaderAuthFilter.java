@@ -34,7 +34,6 @@ public class HeaderAuthFilter extends OncePerRequestFilter {
 
         if(request.getRequestURI().startsWith("/actuator")) {
 
-
             doFilter(request, response, filterChain);
 
             return;

@@ -1,4 +1,3 @@
-// url-service/src/main/java/com/shortlyai/url/classification/ClassificationConsumer.java
 package com.shortlyai.url.consumer;
 
 import com.shortlyai.url.events.UrlClassifiedEvent;
