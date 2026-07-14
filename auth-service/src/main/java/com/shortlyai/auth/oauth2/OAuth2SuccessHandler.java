@@ -67,18 +67,26 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
         // If user exists -> return them
         // If not -> create new User with Provider.GOOGLE, Role.ROLE_FREE, verified=true
         // Google already verified the email — no verification step needed
-        User user = userRepository.findByEmail(email).orElseGet(() -> {
-            User newUser = new User();
+        User user = userRepository.findByEmail(email)
+                .map(existing -> { // If user already logged in and tries to log in from Google
+                            if (!existing.isVerified()) {
+                                existing.setVerified(true);
+                                userRepository.save(existing);
+                            }
+                            return existing;
+                        }
+                ).orElseGet(() -> { // new user
+                    User newUser = new User();
 
-            newUser.setName(name);
-            newUser.setEmail(email);
-            newUser.setPassword(null);
-            newUser.setRole(Role.ROLE_FREE);
-            newUser.setProvider(Provider.GOOGLE);
-            newUser.setVerified(true);
+                    newUser.setName(name);
+                    newUser.setEmail(email);
+                    newUser.setPassword(null);
+                    newUser.setRole(Role.ROLE_FREE);
+                    newUser.setProvider(Provider.GOOGLE);
+                    newUser.setVerified(true);
 
-            return userRepository.save(newUser);
-        });
+                    return userRepository.save(newUser);
+                });
 
         // Step 3
         String accessToken = jwtUtil.generateAccessToken(
