@@ -29,7 +29,16 @@ public class HeaderAuthFilter extends OncePerRequestFilter {
     protected void doFilterInternal(
             HttpServletRequest request,
             HttpServletResponse response,
-            FilterChain filterChain) throws ServletException, IOException {
+            FilterChain filterChain
+    ) throws ServletException, IOException {
+
+        if(request.getRequestURI().startsWith("/actuator")) {
+
+
+            doFilter(request, response, filterChain);
+
+            return;
+        }
 
         // Read the userId injected by the gateway after JWT validation
         String userId = request.getHeader(USER_ID_HEADER);
