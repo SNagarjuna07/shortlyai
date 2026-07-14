@@ -68,7 +68,7 @@ public class RefreshTokenService {
 
         String tokenHash = sha256Hex(refreshToken);
 
-        Boolean existsInRedis = redis.hasKey(REFRESH_TOKEN_PREFIX + refreshToken);
+        Boolean existsInRedis = redis.hasKey(REFRESH_TOKEN_PREFIX + tokenHash);
 
         if (Boolean.TRUE.equals(existsInRedis)) {
 
