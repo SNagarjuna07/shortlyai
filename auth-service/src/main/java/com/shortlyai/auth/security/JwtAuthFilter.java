@@ -1,5 +1,6 @@
 package com.shortlyai.auth.security;
 
+import io.jsonwebtoken.Claims;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -22,7 +23,11 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     private final JwtUtil jwtUtil;
 
     @Override
-    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws ServletException, IOException {
+    protected void doFilterInternal(
+            HttpServletRequest request,
+            HttpServletResponse response,
+            FilterChain filterChain
+    ) throws ServletException, IOException {
 
         String header = request.getHeader("Authorization");
 
@@ -32,9 +37,11 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
             if (jwtUtil.isTokenValid(token)) {
 
-                String userId = jwtUtil.extractUserId(token);
+                Claims claims = jwtUtil.extractAllClaims(token);
 
-                String role = jwtUtil.extractRole(token);
+                String userId = claims.getSubject();
+
+                String role = claims.get("role", String.class);
 
                 // role from JWT is a plain string e.g. "ROLE_FREE"
                 // Spring needs it as GrantedAuthority — wrap it
