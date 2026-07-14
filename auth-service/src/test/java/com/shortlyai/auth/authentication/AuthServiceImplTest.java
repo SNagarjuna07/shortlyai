@@ -128,7 +128,7 @@ class AuthServiceImplTest {
         assertThatThrownBy(() -> authService.login(request, httpRequest))
                 .isInstanceOf(InvalidCredentialsException.class);
 
-        verify(auditLogService).log(eq(AuditEventType.LOGIN_FAILED), any(HttpServletRequest.class));
+        verify(auditLogService).log(eq(AuditEventType.LOGIN_FAILED), null, any(HttpServletRequest.class));
 
         verify(refreshTokenService, never()).store(any(), any());
     }
@@ -190,7 +190,7 @@ class AuthServiceImplTest {
 
         verify(userRepository, never()).save(any());
 
-        verify(auditLogService).log(eq(AuditEventType.REGISTER_FAILED), any(HttpServletRequest.class));
+        verify(auditLogService).log(eq(AuditEventType.REGISTER_FAILED), null, any(HttpServletRequest.class));
     }
 
     @Test
