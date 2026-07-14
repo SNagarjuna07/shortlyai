@@ -45,7 +45,7 @@ public class RefreshTokenService {
 
         // Redis - primary lookup path
         redis.opsForValue().set(
-                REFRESH_TOKEN_PREFIX + refreshToken,
+                REFRESH_TOKEN_PREFIX + sha256Hex(refreshToken),
                 userId,
                 Duration.ofSeconds(ttlSeconds)
         );
@@ -66,16 +66,27 @@ public class RefreshTokenService {
     // Redis is primary - exists() only checks Redis (fast path)
     public boolean exists(String refreshToken) {
 
-        return Boolean.TRUE.equals(
-                redis.hasKey(REFRESH_TOKEN_PREFIX + refreshToken)
-        );
+        String tokenHash = sha256Hex(refreshToken);
+
+        Boolean existsInRedis = redis.hasKey(REFRESH_TOKEN_PREFIX + refreshToken);
+
+        if (Boolean.TRUE.equals(existsInRedis)) {
+
+            return true;
+        }
+
+        return refreshTokenRepository
+                .existsByTokenHashAndExpiresAtAfter(
+                        sha256Hex(refreshToken),
+                        Instant.now()
+                );
     }
 
     // Delete from both stores - Redis invalidates immediately, Postgres cleans up audit trail
     @Transactional
     public void delete(String refreshToken) {
 
-        redis.delete(REFRESH_TOKEN_PREFIX + refreshToken);
+        redis.delete(REFRESH_TOKEN_PREFIX + sha256Hex(refreshToken));
 
         // Postgres delete by hash - raw token never stored or sent to DB
         refreshTokenRepository.deleteByTokenHash(sha256Hex(refreshToken));

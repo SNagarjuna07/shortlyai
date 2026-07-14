@@ -14,4 +14,7 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshToken, UUID
 
     // Added: delete individual token on logout / rotation
     void deleteByTokenHash(String tokenHash);
+
+    // extract token if cache misses
+    boolean existsByTokenHashAndExpiresAtAfter(String hashedToken, Instant now);
 }
