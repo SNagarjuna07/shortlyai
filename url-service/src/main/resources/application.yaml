@@ -53,6 +53,7 @@ spring:
       url-created: ${URL_CREATED_EVENT:url.created}
       url-clicked: ${URL_CLICKED_EVENT:url.clicks}
       url-deleted: ${URL_DELETED_EVENT:url.deleted}
+      url-classified: ${URL_CLASSIFIED_EVENT:url.classified}
 
 
 server:
@@ -62,7 +63,7 @@ server:
 jwt:
   secret: ${JWT_SECRET:dev-secret-key-change-in-prod-must-be-256-bits}
 
-# OpenFeign — base URL for ai-service calls
+# RestClient — base URL for ai-service calls
 ai-service:
   url: ${AI_SERVICE_URL:http://localhost:8084}
 
