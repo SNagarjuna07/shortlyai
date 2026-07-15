@@ -12,6 +12,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
+import java.time.Instant;
 
 @Component
 @Slf4j
@@ -26,7 +27,7 @@ public class CacheWarmingJob {
     private static final String WARM_LOCK_KEY = "lock:cache-warming";
 
     // \u0000 (null byte)
-    // Format: "urlId\u0000userId\u0000originalUrl"
+    // Format: "urlId\u0000userId\u0000expiresAtEpochMs\u0000originalUrl"
     private static final String CACHE_SEP = "\u0000";
 
     public CacheWarmingJob(
@@ -53,18 +54,21 @@ public class CacheWarmingJob {
         try {
 
             Page<Url> mostActiveUrls = urlRepository
-                    .findByIsActiveTrueOrderByClickCountDesc(PageRequest.of(0, 100));
+                    .findByIsActiveTrueOrderByClickCountDesc(
+                            PageRequest.of(
+                                    0,
+                                    100
+                            )
+                    );
 
-            mostActiveUrls.forEach(url ->
-                    stringRedisTemplate.opsForValue().set(
-                            "url:" + url.getSlug(),
-                            // Format matches ShorteningServiceImpl: id\u0000userId\u0000originalUrl
-                            url.getId() + CACHE_SEP + url.getUserId() + CACHE_SEP + url.getOriginalUrl(),
-                            Duration.ofSeconds(ttl)
-                    )
-            );
+            Instant now = Instant.now();
 
-            log.info("Cache warmed with {} URLs", mostActiveUrls.getNumberOfElements());
+            long warmedCount = mostActiveUrls.stream()
+                    .filter(url -> url.getExpiresAt() == null || url.getExpiresAt().isAfter(now))
+                    .count();
+
+            log.info("Cache warmed with {} URLs (skipped {} expired)",
+                    warmedCount, mostActiveUrls.getNumberOfElements() - warmedCount);
 
         } finally {
             stringRedisTemplate.delete(WARM_LOCK_KEY);
