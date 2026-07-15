@@ -1,8 +1,9 @@
 package com.shortlyai.url.shortening;
 
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.Setter;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
+import lombok.*;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -12,6 +13,9 @@ import java.util.UUID;
 @Getter
 @Setter
 @Entity
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 @Table(name = "urls")
 public class Url {
 
@@ -24,6 +28,11 @@ public class Url {
     // The Base62-encoded short code — indexed for fast redirect lookups
     // unique = true mirrors the UNIQUE constraint in our migration
     @Column(nullable = false, unique = true, length = 20)
+    @Size(max = 20, message = "Custom slug cannot exceed 20 characters")
+    @Pattern(
+            regexp = "^[a-zA-Z0-9_-]+$",
+            message = "Custom slug can only contain letters, numbers, hyphens, and underscores"
+    )
     private String slug;
 
     // Original long URL — TEXT in Postgres, no length limit
@@ -46,19 +55,23 @@ public class Url {
 
     // AI safety check — defaults true, updated when ai-service responds
     @Column(nullable = false)
+    @Builder.Default
     private boolean isSafe = true;
 
     // Was this slug user-provided or system-generated via Base62?
     @Column(nullable = false)
+    @Builder.Default
     private boolean isCustom = false;
 
     // Soft delete — never hard-delete URLs, analytics still references them
     @Column(nullable = false)
+    @Builder.Default
     private boolean isActive = true;
 
     // Denormalized click counter — incremented on every redirect
     // analytics-service owns detailed click data, this is for fast reads
     @Column(nullable = false)
+    @Builder.Default
     private long clickCount = 0;
 
     // Null = never expires — set to NOW() + 30 days by default in service layer
