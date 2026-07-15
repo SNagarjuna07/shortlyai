@@ -13,7 +13,8 @@ import tools.jackson.databind.json.JsonMapper;
 public class FailedEventService {
 
     private final FailedEventRepository failedEventRepository;
-    private final JsonMapper jsonMapper; // Spring Boot auto-configures this bean
+
+    private final JsonMapper jsonMapper;
 
     // Called from Kafka whenComplete callback — that runs on Kafka I/O thread,
     // outside any existing transaction, so @Transactional opens a fresh one
@@ -23,20 +24,22 @@ public class FailedEventService {
         try {
             String payload = jsonMapper.writeValueAsString(event); // serialize event -> JSON
 
-            FailedEvent failed = new FailedEvent();
-            failed.setTopic(topic);
-            failed.setEventKey(eventKey);
-            failed.setPayload(payload);
-            failed.setErrorMessage(errorMessage);
+            FailedEvent failed = FailedEvent.builder()
+                    .topic(topic)
+                    .eventKey(eventKey)
+                    .payload(payload)
+                    .errorMessage(errorMessage)
+                    .build();
 
             failedEventRepository.save(failed);
 
-            log.warn("Saved failed event to DLQ: topic={} key={}", topic, eventKey);
+           log.warn("Saved failed event to DLQ: topic= {} key= {}", topic, eventKey);
 
         } catch (JacksonException e) {
+
             // If we can't even serialize the event, log and skip — don't throw
             // Throwing here would crash the Kafka callback thread
-            log.error("Failed to serialize event for DLQ: topic={} key={} error={}",
+            log.error("Failed to serialize event for DLQ: topic= {} key= {} error= {}",
                     topic, eventKey, e.getMessage());
         }
     }
