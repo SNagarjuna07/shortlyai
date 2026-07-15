@@ -38,16 +38,6 @@ public interface UrlRepository extends JpaRepository<Url, Long> {
     """)
     int softDeleteByIdAndUserId(@Param("id") Long id, @Param("userId") UUID userId, @Param("now") Instant now);
 
-    // Expiry cleanup job — finds all expired active URLs
-    // Partial index idx_urls_expires_at makes this fast
-    @Query("""
-               SELECT u
-               FROM Url u
-               WHERE u.expiresAt < :now
-               AND u.isActive = true
-    """)
-    List<Url> findAllExpired(@Param("now") Instant now);
-
     // Increment click counter — single UPDATE, no entity load needed
     // Avoids N+1: loading entity just to increment a number wastes a SELECT
     @Modifying
@@ -84,7 +74,7 @@ public interface UrlRepository extends JpaRepository<Url, Long> {
     List<String> findExpiredSlugs(@Param("now") Instant now);
 
 
-    Optional<Url> findBySlugAndUserId(String slug, UUID userId);
+    Optional<Url> findBySlugAndUserIdAndIsActiveTrue(String slug, UUID userId);
 
     // Soft delete by slug — mirrors softDeleteByIdAndUserId.
     // Keeps both delete paths (by id, by slug) consistent: neither

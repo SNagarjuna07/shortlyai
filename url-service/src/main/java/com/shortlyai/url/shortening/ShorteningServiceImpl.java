@@ -79,8 +79,8 @@ public class ShorteningServiceImpl implements ShorteningService {
     private static final String CACHE_PREFIX = "url:";
 
     // \u0000 (null byte)
-    // URL is stored LAST so split("\u0000", 3) never cuts into it.
-    // Format: "urlId\u0000userId\u0000originalUrl"
+    // URL is stored LAST so split("\u0000", 4) never cuts into it.
+    // Format: "urlId\u0000userId\u0000expiresAtEpochMs\u0000originalUrl"
     private static final String CACHE_SEP = "\u0000";
 
     @Override
@@ -98,35 +98,29 @@ public class ShorteningServiceImpl implements ShorteningService {
             throw new DuplicateSlugException("This slug is already taken");
         }
 
+        // Determine slug (custom or temporary)
+        String slug = isCustom
+                ? request.customSlug()
+                : "tmp" + UUID.randomUUID()
+                .toString()
+                .replace("-", "")
+                .substring(0, 16);
+
         // Build URL entity
-        Url url = new Url();
-        url.setOriginalUrl(request.originalUrl());
-        url.setUserId(userId);
-        url.setCustom(isCustom);
-
-        // Set expiry date, default if null
-        url.setExpiresAt(
-                Instant.now().plus(
-                        request.expiryDays() == null
-                                ? defaultExpiryDays
-                                : request.expiryDays(),
-                        ChronoUnit.DAYS
+        Url url = Url.builder()
+                .originalUrl(request.originalUrl())
+                .userId(userId)
+                .isCustom(isCustom)
+                .expiresAt(
+                        Instant.now().plus(
+                                request.expiryDays() == null
+                                        ? defaultExpiryDays
+                                        : request.expiryDays(),
+                                ChronoUnit.DAYS
+                        )
                 )
-        );
-
-        // Set custom slug if provided else temp slug so DataIntegrityViolationException does not occur
-        if (isCustom) {
-
-            url.setSlug(request.customSlug());
-
-        } else {
-
-            url.setSlug("tmp" + java.util.UUID.randomUUID()
-                    .toString()
-                    .replace("-", "")
-                    .substring(0, 16)
-            );
-        }
+                .slug(slug)
+                .build();
 
         // First save to generate database ID
         Url savedUrl = urlRepository.save(url);
@@ -146,8 +140,6 @@ public class ShorteningServiceImpl implements ShorteningService {
                 attempts++;
 
                 if (attempts > 5) {
-                    // 62^7 space — this should be virtually unreachable.
-                    // Bail loudly rather than loop forever if it ever fires.
                     throw new IllegalStateException(
                             "Failed to generate unique slug after " + attempts + " attempts");
                 }
@@ -159,18 +151,23 @@ public class ShorteningServiceImpl implements ShorteningService {
             savedUrl = urlRepository.save(savedUrl);
         }
 
-        // Cache slug -> original URL in Redis
+        long expiresAtMs = savedUrl.getExpiresAt() == null
+                ? Long.MAX_VALUE
+                : savedUrl.getExpiresAt().toEpochMilli();
+
         stringRedisTemplate.opsForValue().set(
                 CACHE_PREFIX + savedUrl.getSlug(),
                 savedUrl.getId() +
                         CACHE_SEP +
                         savedUrl.getUserId() +
                         CACHE_SEP +
+                        expiresAtMs +
+                        CACHE_SEP +
                         savedUrl.getOriginalUrl(),
                 Duration.ofSeconds(cacheTtlSeconds)
         );
 
-        // Publish kafka event - async because of CompletableFuture
+        // Publish Kafka event
         publishCreatedEvent(savedUrl);
 
         log.info(
@@ -179,12 +176,11 @@ public class ShorteningServiceImpl implements ShorteningService {
                 userId
         );
 
-        // Return response DTO
         return mapToResponse(savedUrl);
     }
 
     @Override
-    @Transactional()
+    @Transactional
     public String resolve(String slug, HttpServletRequest request) {
 
         String cached = stringRedisTemplate.opsForValue()
@@ -193,51 +189,73 @@ public class ShorteningServiceImpl implements ShorteningService {
         // cache hit
         if (cached != null) {
 
-            log.info("Cache hit for slug: {}", slug);
+            String[] parts = cached.split(CACHE_SEP, 4);
 
-            // parse the url which contains id, if Redis is hit there will no id
-            String[] parts = cached.split(CACHE_SEP, 3);
+            if (parts.length < 4) {
 
-            Long urlId = Long.parseLong(parts[0]);
+                // stale pre-migration entry (old 3-part format) - evict it and
+                // fall through to the cache-miss path below instead of returning,
+                // so this request still gets served correctly from the DB
+                log.warn("Stale cache format for slug '{}', evicting and falling back to DB", slug);
 
-            UUID userId = UUID.fromString(parts[1]);
+                stringRedisTemplate.delete(CACHE_PREFIX + slug);
 
-            String originalUrl = parts[2];
+            } else {
 
+                log.info("Cache hit for slug: {}", slug);
 
-            // publish click also on cache hit
-            publishClickEvent(urlId, slug, userId, request);
+                Long urlId = Long.parseLong(parts[0]);
 
-            // Increment click counter in DB
-            urlRepository.incrementClickCount(urlId);
+                UUID userId = UUID.fromString(parts[1]);
 
-            return originalUrl;
+                long expiresAtMs = Long.parseLong(parts[2]);
+
+                String originalUrl = parts[3];
+
+                if (Instant.ofEpochMilli(expiresAtMs).isBefore(Instant.now())) {
+
+                    log.info("Cached slug '{}' has expired, evicting and treating as not found", slug);
+
+                    stringRedisTemplate.delete(CACHE_PREFIX + slug);
+
+                    throw new UrlNotFoundException("URL not found");
+                }
+
+                publishClickEvent(urlId, slug, userId, request);
+
+                urlRepository.incrementClickCount(urlId);
+
+                return originalUrl;   // only returns here - the valid, non-stale, non-expired case
+            }
         }
 
         log.info("Cache miss for slug. Fetching from DB: {}", slug);
 
-        // cache miss
+        // cache miss - also reached when the entry was stale and got evicted above
         Url shortUrl = urlRepository.findBySlugAndIsActiveTrueAndExpiresAtAfter(
                         slug,
                         Instant.now()
                 )
                 .orElseThrow(() -> new UrlNotFoundException("URL not found"));
 
-        // save to REDIS
+        long expiresAtMs = shortUrl.getExpiresAt() == null
+                ? Long.MAX_VALUE
+                : shortUrl.getExpiresAt().toEpochMilli();
+
         stringRedisTemplate.opsForValue().set(
                 CACHE_PREFIX + slug,
                 shortUrl.getId() +
                         CACHE_SEP +
                         shortUrl.getUserId() +
                         CACHE_SEP +
-                        shortUrl.getOriginalUrl(), // <- same format
+                        expiresAtMs +
+                        CACHE_SEP +
+                        shortUrl.getOriginalUrl(),
                 Duration.ofSeconds(cacheTtlSeconds)
         );
 
-        // publish Kafka async
         publishClickEvent(shortUrl.getId(), slug, shortUrl.getUserId(), request);
 
-        // Increment the click count in DB
         urlRepository.incrementClickCount(shortUrl.getId());
 
         return shortUrl.getOriginalUrl();
@@ -290,7 +308,7 @@ public class ShorteningServiceImpl implements ShorteningService {
     public ShortenResponse getUrlBySlug(String slug, UUID userId) {
 
         Url url = urlRepository
-                .findBySlugAndUserId(slug, userId)
+                .findBySlugAndUserIdAndIsActiveTrue(slug, userId)
                 .orElseThrow(() -> new UrlNotFoundException("URL not found with slug: " + slug)
                 );
 
@@ -301,7 +319,7 @@ public class ShorteningServiceImpl implements ShorteningService {
     public void deleteUrl(String slug, UUID userId) {
 
         // fetch - throws UrlNotFoundException if not found (GlobalExceptionHandler -> 404)
-        Url url = urlRepository.findBySlugAndUserId(slug, userId)
+        Url url = urlRepository.findBySlugAndUserIdAndIsActiveTrue(slug, userId)
                 .orElseThrow(() -> new UrlNotFoundException("URL slug " + slug + " not found"));
 
         // Soft-delete, same as delete(id, userId). Never hard-delete here:
