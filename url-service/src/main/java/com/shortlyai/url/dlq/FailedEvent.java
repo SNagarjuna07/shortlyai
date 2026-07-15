@@ -1,8 +1,7 @@
 package com.shortlyai.url.dlq;
 
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.Setter;
+import lombok.*;
 
 import java.time.Instant;
 
@@ -10,6 +9,9 @@ import java.time.Instant;
 @Table(name = "failed_events")
 @Getter
 @Setter
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class FailedEvent {
 
     @Id
@@ -29,9 +31,11 @@ public class FailedEvent {
     private String errorMessage;  // exception message from Kafka failure
 
     @Column(name = "retry_count", nullable = false)
+    @Builder.Default
     private int retryCount = 0;   // incremented on each retry attempt
 
     @Column(nullable = false)
+    @Builder.Default
     private boolean processed = false; // true once successfully republished
 
     @Column(name = "created_at", nullable = false, updatable = false)
