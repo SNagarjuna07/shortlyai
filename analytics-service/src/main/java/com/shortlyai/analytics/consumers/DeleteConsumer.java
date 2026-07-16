@@ -18,7 +18,7 @@ public class DeleteConsumer {
     private final ClickService clickService;
 
     @KafkaListener(
-            topics = "url.deleted",
+            topics = "${spring.kafka.topics.url-deleted}",
             groupId = "analytics-service-group",
             containerFactory = "deletedKafkaListenerContainerFactory"
     )
@@ -28,8 +28,8 @@ public class DeleteConsumer {
             @Header(KafkaHeaders.OFFSET) long offset
     ) {
 
-        log.info("Received url.deleted: slug: {} partition: {} offset: {}",
-                event.slug(), partition, offset);
+        log.info("Received event: {} - slug: {} partition: {} offset: {}",
+                "${spring.kafka.topics.url-deleted}", event.slug(), partition, offset);
 
         clickService.deleteClickData(event);
     }

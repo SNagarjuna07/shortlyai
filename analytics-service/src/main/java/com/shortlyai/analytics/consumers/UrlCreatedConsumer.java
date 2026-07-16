@@ -18,7 +18,7 @@ public class UrlCreatedConsumer {
     private final ClickService clickService;
 
     @KafkaListener(
-            topics = "url.created",
+            topics = "${spring.kafka.topics.url-created}",
             groupId = "analytics-service-group",
             containerFactory = "createdKafkaListenerContainerFactory"
     )
@@ -27,8 +27,9 @@ public class UrlCreatedConsumer {
             @Header(KafkaHeaders.RECEIVED_PARTITION) int partition,
             @Header(KafkaHeaders.OFFSET) long offset
     ) {
-        log.info("Received url.created: slug={} urlId={} partition={} offset={}",
-                event.slug(), event.urlId(), partition, offset);
+
+        log.info("Received event: {}: slug= {} urlId= {} partition= {} offset= {}",
+                "${spring.kafka.topics.url-created}", event.slug(), event.urlId(), partition, offset);
 
         clickService.initializeCounter(event);
     }

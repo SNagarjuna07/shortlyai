@@ -18,16 +18,17 @@ public class ClickConsumer {
     private final ClickService clickService;
 
     @KafkaListener(
-            topics = "url.clicks",              // must match topic name url-service publishes to
-            groupId = "analytics-service-group" // Kafka tracks offset per group — restarts resume
+            topics = "${spring.kafka.topics.url-clicked}",
+            groupId = "analytics-service-group"
     )
     public void onUrlClicked(
             @Payload UrlClickedEvent event,                       // deserialized JSON → Record
             @Header(KafkaHeaders.RECEIVED_PARTITION) int partition, // which Kafka partition
             @Header(KafkaHeaders.OFFSET) long offset              // position in partition
     ) {
-        log.debug("Received url.clicks event: slug={} partition={} offset={}",
-                event.slug(), partition, offset);
+
+        log.debug("Received event: {} - slug= {} partition= {} offset= {}",
+                "${spring.kafka.topics.url-clicked}", event.slug(), partition, offset);
 
         // Delegate to service — consumer stays thin (same rule as controllers)
         clickService.processClick(event);
