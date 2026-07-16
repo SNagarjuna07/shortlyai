@@ -42,6 +42,8 @@ class ClickServiceImplTest {
 
     private ClickServiceImpl clickService;
 
+    private final String USER_ID = "550e8400-e29b-41d4-a716-446655440000";
+
     @BeforeEach
     void setUp() {
 
@@ -95,29 +97,41 @@ class ClickServiceImplTest {
     @Test
     void getTotalClicks_returnsFromRedis_whenCached() {
 
+        UUID userId = UUID.fromString(USER_ID);
+
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
 
         when(valueOperations.get("clicks:realtime:99")).thenReturn("17");
 
-        long total = clickService.getTotalClicks(99L);
+        when(clickEventRepository.existsByUrlIdAndUserId(99L, userId))
+                .thenReturn(true);
+
+        long total = clickService.getTotalClicks(99L, userId);
 
         assertThat(total).isEqualTo(17L);
 
-        verifyNoInteractions(clickEventRepository);
+        verify(clickEventRepository, never()).countByUrlId(anyLong());
     }
 
     @Test
     void getTotalClicks_fallsBackToPostgres_whenCacheMiss() {
 
+        UUID userId = UUID.fromString(USER_ID);
+
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
 
         when(valueOperations.get("clicks:realtime:99")).thenReturn(null);
 
+        when(clickEventRepository.existsByUrlIdAndUserId(99L, userId))
+                .thenReturn(true);
+
         when(clickEventRepository.countByUrlId(99L)).thenReturn(5L);
 
-        long total = clickService.getTotalClicks(99L);
+        long total = clickService.getTotalClicks(99L, userId);
 
         assertThat(total).isEqualTo(5L);
+
+        verify(clickEventRepository).countByUrlId(99L);
     }
 
     @Test
@@ -149,8 +163,9 @@ class ClickServiceImplTest {
     @Test
     void getHourlyBreakdown_mapsRepositoryRowsToResponses_inOrder() {
 
-        Instant hour1 = Instant.parse("2026-06-19T08:00:00Z");
+        UUID userId = UUID.fromString(USER_ID);
 
+        Instant hour1 = Instant.parse("2026-06-19T08:00:00Z");
         Instant hour2 = Instant.parse("2026-06-19T09:00:00Z");
 
         List<ClickHourly> rows = List.of(
@@ -158,9 +173,16 @@ class ClickServiceImplTest {
                 new ClickHourly(10L, hour2, 8L)
         );
 
-        when(clickHourlyRepository.findByUrlIdSince(eq(10L), any(Instant.class))).thenReturn(rows);
+        when(clickEventRepository.existsByUrlIdAndUserId(10L, userId))
+                .thenReturn(true);
 
-        List<HourlyBreakdownResponse> result = clickService.getHourlyBreakdown(10L, 24);
+        when(clickHourlyRepository.findByUrlIdAndSince(
+                eq(10L),
+                any(Instant.class)))
+                .thenReturn(rows);
+
+        List<HourlyBreakdownResponse> result =
+                clickService.getHourlyBreakdown(10L, userId, 24);
 
         assertThat(result).containsExactly(
                 new HourlyBreakdownResponse(hour1, 3L),
