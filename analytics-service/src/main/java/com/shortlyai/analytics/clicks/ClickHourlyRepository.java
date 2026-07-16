@@ -22,7 +22,7 @@ public interface ClickHourlyRepository extends JpaRepository<ClickHourly, Long> 
             AND c.hour >= :since
             ORDER BY c.hour ASC
             """)
-    List<ClickHourly> findByUrlIdSince(
+    List<ClickHourly> findByUrlIdAndSince(
             @Param("urlId") Long urlId,
             @Param("since") Instant since
     );
