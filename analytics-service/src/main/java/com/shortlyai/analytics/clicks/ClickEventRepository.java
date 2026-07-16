@@ -55,4 +55,7 @@ public interface ClickEventRepository extends JpaRepository<ClickEvent, Long> {
         ORDER BY COUNT(c) DESC
         """)
     List<TopUrlResponse> findTopUrlsByUserId(@Param("userId") UUID userId, Pageable pageable);
+
+    boolean existsByUrlIdAndUserId(Long urlId, UUID userId);
+
 }
