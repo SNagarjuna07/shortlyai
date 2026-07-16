@@ -11,13 +11,13 @@ public interface ClickService {
 
     void processClick(UrlClickedEvent event);
 
-    long getTotalClicks(Long urlId);
+    long getTotalClicks(Long urlId, UUID userId);
 
     void initializeCounter(UrlCreatedEvent event);
 
     void deleteClickData(UrlDeletedEvent event);
 
-    List<HourlyBreakdownResponse> getHourlyBreakdown(Long urlId, int hours);
+    List<HourlyBreakdownResponse> getHourlyBreakdown(Long urlId, UUID userId, int hours);
 
     List<TopUrlResponse> getTopUrls(UUID userId, int limit);
 }

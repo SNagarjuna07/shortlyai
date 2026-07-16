@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,21 +22,27 @@ import java.util.UUID;
 public class ClickServiceImpl implements ClickService {
 
     private final ClickEventRepository clickEventRepository;
+
     private final BloomFilterService bloomFilterService;
+
     private final StringRedisTemplate redisTemplate;
+
     private final ClickHourlyRepository clickHourlyRepository;
 
     // Called by Kafka consumer for every url.clicks event
-    @Transactional  // wraps DB insert in a transaction — rolls back if save fails
+    @Transactional
     public void processClick(UrlClickedEvent event) {
+
         // Build a fingerprint: urlId + ipHash + minute-bucket
         // Deduplicates same IP clicking same URL within the same minute
         String fingerprint = event.urlId() + ":" + event.ipHash() + ":"
                 + (event.clickedAt().getEpochSecond() / 60); // minute bucket
 
         if (bloomFilterService.isDuplicate(fingerprint)) {
-            log.debug("Duplicate click detected for slug={}, skipping", event.slug());
-            return; // skip — already counted this click
+
+            log.debug("Duplicate click detected for slug: {}, skipping", event.slug());
+
+            return; // skip - already counted this click
         }
 
         // Save raw click event to Postgres
@@ -50,19 +57,34 @@ public class ClickServiceImpl implements ClickService {
         String redisKey = "clicks:realtime:" + event.urlId();
         redisTemplate.opsForValue().increment(redisKey);
 
-        log.debug("Processed click for slug={} urlId={}", event.slug(), event.urlId());
+        log.debug("Processed click for slug: {} urlId: {}", event.slug(), event.urlId());
     }
 
-    // Called by stats controller — total click count for a URL
-    @Transactional(readOnly = true) // readOnly = true Hibernate skips dirty checking, faster
-    public long getTotalClicks(Long urlId) {
-        // Try Redis first (real-time counter) — fast path
+    @Transactional(readOnly = true)
+    public long getTotalClicks(Long urlId, UUID userId) {
+
+        // Try Redis first (real-time counter)
         String redisKey = "clicks:realtime:" + urlId;
-        String cached = redisTemplate.opsForValue().get(redisKey);
-        if (cached != null) {
-            return Long.parseLong(cached);
+
+        String cached = redisTemplate.opsForValue()
+                .get(redisKey);
+
+        boolean owns = clickEventRepository.existsByUrlIdAndUserId(urlId, userId);
+
+        if (!owns) {
+            throw new AccessDeniedException("URL not found");  // don't leak existence via a 403 vs 404 distinction
         }
-        // Fallback: count from Postgres
+
+        if (cached != null) {
+
+            try {
+
+                return Long.parseLong(cached);
+            } catch (NumberFormatException e) {
+
+                log.warn("Corrupt redis counter for urlId {}, falling back to DB", urlId);
+            }
+        }
         return clickEventRepository.countByUrlId(urlId);
     }
 
@@ -90,17 +112,23 @@ public class ClickServiceImpl implements ClickService {
     }
 
     // Queries hourly rollup table for a URL over last N hours
+    // ClickServiceImpl.java
     @Transactional(readOnly = true)
-    public List<HourlyBreakdownResponse> getHourlyBreakdown(Long urlId, int hours) {
+    public List<HourlyBreakdownResponse> getHourlyBreakdown(Long urlId, UUID userId, int hours) {
 
-        List<ClickHourly> clicks = clickHourlyRepository.findByUrlIdSince(
-                urlId,
-                Instant.now()
-                        .minus(hours, ChronoUnit.HOURS)
-        );
+        boolean owns = clickEventRepository.existsByUrlIdAndUserId(urlId, userId);
 
-        return clicks
-                .stream()
+        if (!owns) {
+            throw new AccessDeniedException("URL not found");
+        }
+
+        List<ClickHourly> clicks = clickHourlyRepository
+                .findByUrlIdAndSince(
+                        urlId,
+                        Instant.now().minus(hours, ChronoUnit.HOURS)
+                );
+
+        return clicks.stream()
                 .map(row ->
                         new HourlyBreakdownResponse(
                                 row.getHour(),
@@ -108,7 +136,6 @@ public class ClickServiceImpl implements ClickService {
                         )
                 )
                 .toList();
-
     }
 
     // Queries raw click_events grouped by urlId. Returns top N by click count
