@@ -2,6 +2,8 @@ package com.shortlyai.analytics.clicks;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -24,9 +26,12 @@ public class ClickStatsController {
     )
     // GET /api/v1/analytics/{urlId} -> returns total click count
     @GetMapping("/{urlId}")
-    public ResponseEntity<ClickStatsResponse> getStats(@PathVariable Long urlId) {
+    public ResponseEntity<ClickStatsResponse> getStats(
+            @PathVariable Long urlId,
+            @AuthenticationPrincipal UUID userId
+    ) {
 
-        long total = clickService.getTotalClicks(urlId);
+        long total = clickService.getTotalClicks(urlId, userId);
 
         return ResponseEntity.ok(new ClickStatsResponse(urlId, total, "OK"));
     }
@@ -39,11 +44,12 @@ public class ClickStatsController {
     @GetMapping("/{urlId}/hourly")
     public ResponseEntity<List<HourlyBreakdownResponse>> getHourlyBreakdown(
             @PathVariable Long urlId,
+            @AuthenticationPrincipal UUID userId,
             @RequestParam(defaultValue = "24") int hours
     ) {
 
         return ResponseEntity.ok(
-                clickService.getHourlyBreakdown(urlId, hours)
+                clickService.getHourlyBreakdown(urlId, userId, hours)
         );
     }
 
@@ -54,8 +60,12 @@ public class ClickStatsController {
     // Top N URLs
     @GetMapping("/top")
     public ResponseEntity<List<TopUrlResponse>> topUrls(
-            @RequestParam(defaultValue = "10") int limit,
-            @AuthenticationPrincipal UUID userId
+            @RequestParam(defaultValue = "10")
+            @Min(value = 1, message = "Limit should be more than 1 and less than 50")
+            @Max(value = 50, message = "Limit should be more than 1 and less than 50")
+            int limit,
+            @AuthenticationPrincipal
+            UUID userId
     ) {
 
         return ResponseEntity.ok(
