@@ -6,6 +6,8 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -24,10 +26,15 @@ public class SafetyController {
             description = "The AI agent checks whether the URL is safe or malicious"
     )
     @PostMapping("/check")
-    public SafetyCheckResponse check(
-            @Valid @RequestBody SafetyCheckRequest request
+    public ResponseEntity<SafetyCheckResponse> check(
+            @Valid @RequestBody
+            SafetyCheckRequest request
     ) {
 
-        return safetyService.check(request);
+        return ResponseEntity.status(HttpStatus.OK)
+                .body(
+                        safetyService.check(request)
+                                .join()
+                );
     }
 }
