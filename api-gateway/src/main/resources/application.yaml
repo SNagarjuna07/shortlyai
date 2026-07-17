@@ -5,6 +5,9 @@ spring:
   application:
     name: api-gateway  # service name shown in logs + actuator
 
+  reactor:
+    context-propagation: AUTO
+
   threads:
     virtual:
       enabled: true
@@ -43,6 +46,12 @@ spring:
               uri: lb://url-service
               predicates:
                 - Path=/api/v1/urls/**
+
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: urlServiceCB
+                    fallbackUri: forward:/fallback/url-service
 
             - id: url-service
               uri: lb://url-service
@@ -177,7 +186,7 @@ logging:
 
 # Per-service rate limits
 # auth: strict - /login is brute-force target
-# ai:   very strict - each call hits LLM, expensive
+# AI: very strict - each call hits LLM, expensive
 # analytics: lenient - read-only stats endpoints
 rate-limit:
   routes:
@@ -197,13 +206,13 @@ rate-limit:
       replenish-rate: 2
       burst-capacity: 3
       requested-tokens: 1
-    default:
+    mcp:
       replenish-rate: 5
       burst-capacity: 10
       requested-tokens: 1
-    mcp:
-      replenish-rate: 100    # high - SSE is one connection, not per-request
-      burst-capacity: 100
+    default:
+      replenish-rate: 5
+      burst-capacity: 10
       requested-tokens: 1
 
 # Swagger config
