@@ -76,14 +76,15 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
                             return existing;
                         }
                 ).orElseGet(() -> { // new user
-                    User newUser = new User();
 
-                    newUser.setName(name);
-                    newUser.setEmail(email);
-                    newUser.setPassword(null);
-                    newUser.setRole(Role.ROLE_FREE);
-                    newUser.setProvider(Provider.GOOGLE);
-                    newUser.setVerified(true);
+                    User newUser = User.builder()
+                            .name(name)
+                            .email(email)
+                            .password(null)
+                            .role(Role.ROLE_FREE)
+                            .provider(Provider.GOOGLE)
+                            .verified(true)
+                            .build();
 
                     return userRepository.save(newUser);
                 });

@@ -52,7 +52,7 @@ public class AuthServiceImpl implements AuthService {
                     log.warn("Login failed, email not found: {}", request.email());
 
                     // Audit LOGIN_FAILED — no userId yet (user not found)
-                    auditLogService.log(AuditEventType.LOGIN_FAILED,null, httpRequest);
+                    auditLogService.log(AuditEventType.LOGIN_FAILED, null, httpRequest);
 
                     return new InvalidCredentialsException("Invalid email or password");
                 });
@@ -105,14 +105,14 @@ public class AuthServiceImpl implements AuthService {
             throw new EmailAlreadyExistsException("An account exists already with this email");
         }
 
-        User user = new User();
-
-        user.setName(registerRequest.name());
-        user.setEmail(registerRequest.email());
-        user.setPassword(passwordEncoder.encode(registerRequest.password()));
-        user.setRole(Role.ROLE_FREE);
-        user.setProvider(Provider.LOCAL);
-        user.setVerified(false);
+        User user = User.builder()
+                .name(registerRequest.name())
+                .email(registerRequest.email())
+                .password(passwordEncoder.encode(registerRequest.password()))
+                .role(Role.ROLE_FREE)
+                .provider(Provider.LOCAL)
+                .verified(false)
+                .build();
 
         User savedUser = userRepository.save(user);
 
