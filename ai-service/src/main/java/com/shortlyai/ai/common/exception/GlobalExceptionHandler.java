@@ -18,7 +18,10 @@ public class GlobalExceptionHandler {
 
     // @Valid failures on request bodies
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<ErrorResponse> handleValidation(MethodArgumentNotValidException ex) {
+    public ResponseEntity<ErrorResponse> handleValidation(
+            MethodArgumentNotValidException ex,
+            HttpServletRequest request
+    ) {
 
         String message = ex.getBindingResult().getFieldErrors().stream()
                 .findFirst()
@@ -28,7 +31,13 @@ public class GlobalExceptionHandler {
         log.warn("Validation failed: {}", message);
 
         return ResponseEntity.badRequest()
-                .body(new ErrorResponse(Instant.now(), 400, "BAD_REQUEST", message));
+                .body(new ErrorResponse(
+                                HttpStatus.BAD_REQUEST.value(),
+                                "Validation failed: " + message,
+                                request.getRequestURI(),
+                                Instant.now()
+                        )
+                );
     }
 
     @ExceptionHandler(NoResourceFoundException.class)
@@ -36,14 +45,23 @@ public class GlobalExceptionHandler {
             NoResourceFoundException ex,
             HttpServletRequest request
     ) {
-        // 404 not 500 — mcp-remote OAuth discovery needs clean 404 to fall back gracefully
+
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body(new ErrorResponse(Instant.now(), 404, "Resource not found", ex.getMessage()));
+                .body(new ErrorResponse(
+                                HttpStatus.NOT_FOUND.value(),
+                                ex.getMessage(),
+                                request.getRequestURI(),
+                                Instant.now()
+                        )
+                );
     }
 
     // downstream service (url-service / analytics-service) returned 4xx/5xx
     @ExceptionHandler(RestClientResponseException.class)
-    public ResponseEntity<ErrorResponse> handleDownstream(RestClientResponseException ex) {
+    public ResponseEntity<ErrorResponse> handleDownstream(
+            RestClientResponseException ex,
+            HttpServletRequest request
+    ) {
 
         HttpStatus status = HttpStatus.valueOf(ex.getStatusCode().value());
 
@@ -52,17 +70,28 @@ public class GlobalExceptionHandler {
         );
 
         return ResponseEntity.status(status)
-                .body(new ErrorResponse(Instant.now(), status.value(), status.name(),
-                        "Downstream service error: " + ex.getMessage()));
+                .body(new ErrorResponse(
+                                status.value(),
+                                "Downstream service error: " + ex.getMessage(),
+                                request.getRequestURI(),
+                                Instant.now()
+                        )
+                );
     }
 
     // catch-all
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<ErrorResponse> handleGeneric(Exception ex) {
+    public ResponseEntity<ErrorResponse> handleGeneric(Exception ex, HttpServletRequest request) {
 
         log.error("Unhandled exception", ex);
 
         return ResponseEntity.internalServerError()
-                .body(new ErrorResponse(Instant.now(), 500, "INTERNAL_ERROR", ex.getMessage()));
+                .body(new ErrorResponse(
+                                HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                                "An unexpected error occurred" + ex.getMessage(),
+                                request.getRequestURI(),
+                                Instant.now()
+                        )
+                );
     }
 }

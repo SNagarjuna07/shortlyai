@@ -1,10 +1,10 @@
-package com.shortlyai.ai.common.exception;
+gitpackage com.shortlyai.ai.common.exception;
 
 import java.time.Instant;
 
 public record ErrorResponse(
-        Instant timestamp,
         int status,
-        String error,
-        String message
+        String message,
+        String path,
+        Instant timestamp
 ) {}
