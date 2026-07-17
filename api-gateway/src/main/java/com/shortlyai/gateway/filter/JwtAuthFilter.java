@@ -17,17 +17,15 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 import tools.jackson.databind.json.JsonMapper;
+
 import java.time.Instant;
 
-// GlobalFilter — runs on every request, before routing to any service
-// Order -1 — runs after TraceIdFilter (-2), before all other filters
 @Slf4j
 @Component
 public class JwtAuthFilter implements GlobalFilter, Ordered {
 
     private final JwtUtil jwtUtil;
 
-    // JsonMapper - serializes ErrorResponse to JSON bytes for 401 responses
     private final JsonMapper jsonMapper;
 
     private final String apiPrefix;
@@ -48,74 +46,63 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
     }
 
     @Override
-    public Mono<Void> filter(
-            ServerWebExchange exchange,
-            GatewayFilterChain chain
-    ) {
+    public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
 
-        String path = exchange
-                .getRequest()
-                .getURI()
-                .getPath();
+        String path = exchange.getRequest().getURI().getPath();
 
-        // Skip JWT check for public paths
+        // Strip any client-supplied trust headers FIRST, on every request,
+        // before any public/protected branching. Nothing downstream should
+        // ever see an X-User-Id that didn't come from a validated JWT here.
+        ServerHttpRequest strippedRequest = exchange.getRequest().mutate()
+                .headers(headers -> {
+                    headers.remove("X-User-Id");
+                    headers.remove("X-User-Role");
+                })
+                .build();
+
+        ServerWebExchange strippedExchange = exchange.mutate().request(strippedRequest).build();
+
         if (isPublicPath(path)) {
 
             log.debug("Public path, skipping JWT check: {}", path);
 
-            return chain.filter(exchange);
+            return chain.filter(strippedExchange);
         }
 
-        // Extract Authorization header - must be "Bearer <token>"
-        String authHeader = exchange
+        String authHeader = strippedExchange
                 .getRequest()
                 .getHeaders()
                 .getFirst(HttpHeaders.AUTHORIZATION);
 
-        // Missing or malformed header - reject immediately
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
 
             log.warn("Missing or invalid Authorization header for path: {}", path);
 
-            return writeError(
-                    exchange,
-                    HttpStatus.UNAUTHORIZED,
-                    "Authorization header required"
-            );
+            return writeError(strippedExchange, HttpStatus.UNAUTHORIZED, "Authorization header required");
         }
 
-        // Strip "Bearer " prefix - 7 chars
         String token = authHeader.substring(7);
 
-        // Validate signature + expiry
         if (!jwtUtil.isTokenValid(token)) {
 
             log.warn("Invalid or expired JWT for path: {}", path);
 
-            return writeError(
-                    exchange,
-                    HttpStatus.UNAUTHORIZED,
-                    "Invalid or expired token"
-            );
+            return writeError(strippedExchange, HttpStatus.UNAUTHORIZED, "Invalid or expired token");
         }
 
-        // Token valid - extract claims to inject as headers for downstream services
         String userId = jwtUtil.extractUserId(token);
         String role = jwtUtil.extractRole(token);
 
-        // WHY inject headers?
-        // Downstream services (url-service, analytics-service) need userId
-        // But we don't want each service to re-parse and re-validate the JWT
-        // Gateway validates ONCE, downstream services trust X-User-Id header
-        ServerHttpRequest mutatedRequest = exchange.getRequest().mutate()
-                .header("X-User-Id", userId)      // e.g. "550e8400-e29b-41d4-a716-446655440000"
-                .header("X-User-Role", role)      // e.g. "ROLE_PRO"
+        ServerHttpRequest mutatedRequest = strippedExchange
+                .getRequest()
+                .mutate()
+                .header("X-User-Id", userId)
+                .header("X-User-Role", role)
                 .build();
 
         log.debug("JWT valid, userId: {}, role: {}, forwarding to: {}", userId, role, path);
 
-         // Pass mutated exchange - downstream services see the injected headers
-        return chain.filter(exchange.mutate().request(mutatedRequest).build());
+        return chain.filter(strippedExchange.mutate().request(mutatedRequest).build());
     }
 
     // Decides if a path requires JWT or not
@@ -135,8 +122,6 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
         return path.startsWith("/r/");
     }
 
-    // Writes a JSON error response directly - request never reaches downstream service
-    // reactive pattern: wrap bytes in DataBuffer, write to response body
     private Mono<Void> writeError(
             ServerWebExchange exchange,
             HttpStatus status,
