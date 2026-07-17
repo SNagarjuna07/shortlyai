@@ -1,42 +1,57 @@
-    package com.shortlyai.ai.agent;
+package com.shortlyai.ai.agent;
 
-    import com.shortlyai.ai.agent.dto.AgentResponse;
-    import com.shortlyai.ai.agent.tools.AnalyticsServiceTools;
-    import com.shortlyai.ai.agent.tools.UrlServiceTools;
-    import lombok.extern.slf4j.Slf4j;
-    import org.springframework.ai.chat.client.ChatClient;
-    import org.springframework.beans.factory.annotation.Value;
-    import org.springframework.core.io.Resource;
-    import org.springframework.stereotype.Service;
+import com.shortlyai.ai.agent.dto.AgentResponse;
+import com.shortlyai.ai.agent.tools.AnalyticsServiceTools;
+import com.shortlyai.ai.agent.tools.UrlServiceTools;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
+import io.github.resilience4j.timelimiter.annotation.TimeLimiter;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.Resource;
+import org.springframework.stereotype.Service;
 
-    import java.util.Map;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 
-    @Service
-    @Slf4j
-    public class AgentService {
+@Service
+@Slf4j
+public class AgentService {
 
-        private final ChatClient chatClient;
+    private final ChatClient chatClient;
 
-        private final UrlServiceTools urlServiceTools;
+    private final UrlServiceTools urlServiceTools;
 
-        private final AnalyticsServiceTools analyticsServiceTools;
+    private final AnalyticsServiceTools analyticsServiceTools;
 
-        private final Resource agentPrompt;
+    private final Resource agentPrompt;
 
-        public AgentService(
-                ChatClient chatClient,
-                UrlServiceTools urlServiceTools,
-                AnalyticsServiceTools analyticsServiceTools,
-                @Value("classpath:prompts/agent-service-prompt/agent-prompt.st")
-                Resource agentPrompt
-        ) {
-            this.chatClient = chatClient;
-            this.urlServiceTools = urlServiceTools;
-            this.analyticsServiceTools = analyticsServiceTools;
-            this.agentPrompt = agentPrompt;
-        }
+    private final Executor resilientOpsExecutor;
 
-        public AgentResponse chat(String userId, String message) {
+    public AgentService(
+            ChatClient chatClient,
+            UrlServiceTools urlServiceTools,
+            AnalyticsServiceTools analyticsServiceTools,
+            @Value("classpath:prompts/agent-service-prompt/agent-prompt.st")
+            Resource agentPrompt,
+            @Qualifier("resilientOpsExecutor") Executor resilientOpsExecutor
+    ) {
+        this.chatClient = chatClient;
+        this.urlServiceTools = urlServiceTools;
+        this.analyticsServiceTools = analyticsServiceTools;
+        this.agentPrompt = agentPrompt;
+        this.resilientOpsExecutor = resilientOpsExecutor;
+    }
+
+    @CircuitBreaker(name = "ai-agent", fallbackMethod = "chatFallback")
+    @Retry(name = "ai-agent")
+    @TimeLimiter(name = "ai-agent")
+    public CompletableFuture<AgentResponse> chat(String userId, String message) {
+
+        return CompletableFuture.supplyAsync(() -> {
 
             log.info("Agent chat request userId: {}, message: {}", userId, message);
 
@@ -51,5 +66,20 @@
             log.debug("Agent reply userId: {}: {}", userId, reply);
 
             return new AgentResponse(reply);
-        }
+
+        }, resilientOpsExecutor);
     }
+
+    public CompletableFuture<AgentResponse> chatFallback(
+            String userId,
+            String message,
+            Throwable ex
+    ) {
+
+        log.error("Agent chat unavailable for userId: {}", userId, ex);
+
+        return CompletableFuture.completedFuture(
+                new AgentResponse("Sorry, I'm temporarily unable to respond. Please try again shortly.")
+        );
+    }
+}
