@@ -27,16 +27,16 @@ public class TraceIdFilter implements GlobalFilter, Ordered {
     }
 
     @Override
-    public Mono<Void> filter(
-            ServerWebExchange exchange,
-            GatewayFilterChain chain
-    ) {
+    public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
 
         // Reuse existing trace ID if client or upstream sent one
         // Otherwise generate fresh UUID for this request lifecycle
-        String traceId = exchange.getRequest().getHeaders().getFirst(TRACE_ID_HEADER);
+        String traceId = exchange
+                .getRequest()
+                .getHeaders()
+                .getFirst(TRACE_ID_HEADER);
 
-        if (traceId == null || traceId.isBlank()) {
+        if (traceId == null || traceId.isBlank() || traceId.length() > 100 || !traceId.matches("[a-zA-Z0-9-]+")) {
 
             traceId = UUID.randomUUID().toString();
         }
@@ -44,18 +44,19 @@ public class TraceIdFilter implements GlobalFilter, Ordered {
         final String finalTraceId = traceId;
 
         // Mutate request - adds X-Trace-Id header going TO downstream services
-        // Downstream services read this and put it in their MDC for correlated logging
-        ServerHttpRequest mutatedRequest = exchange.getRequest().mutate()
+        // They read this and put it in their MDC for correlated logging
+        ServerHttpRequest mutatedRequest = exchange
+                .getRequest()
+                .mutate()
                 .header(TRACE_ID_HEADER, finalTraceId)
                 .build();
 
         // Mutate response - adds X-Trace-Id header going BACK to client
-        // Client can use this to report bugs: "my trace ID was abc-123"
-        exchange.getResponse().getHeaders().add(TRACE_ID_HEADER, finalTraceId);
+        exchange
+                .getResponse()
+                .getHeaders()
+                .add(TRACE_ID_HEADER, finalTraceId);
 
-        // Put traceId into MDC so Logback pattern %mdc{traceId} resolves it
-        // doFinally removes it - runs on completion, error, OR cancel (all signal types)
-        // Without remove: MDC leaks to next request on same thread
         MDC.put("traceId", finalTraceId);
 
         log.debug("Trace ID assigned: {} for path: {}", finalTraceId,
