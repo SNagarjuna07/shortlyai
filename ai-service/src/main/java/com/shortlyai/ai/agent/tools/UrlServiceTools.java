@@ -109,47 +109,51 @@ public class UrlServiceTools {
         }
     }
 
-    @Tool(description = "Delete a shortened URL by its slug")
+    @Tool(description = """
+            Delete a shortened URL by its slug. This is permanent and cannot be undone.
+            You MUST ask the user to explicitly confirm before calling this with
+            confirmDeletion=true. Never call this with confirmDeletion=true unless
+            the user's most recent message explicitly confirms the deletion.
+            """)
     public String deleteUrl(
             @ToolParam(description = "the short slug to delete") String slug,
+            @ToolParam(description = "true only if the user has explicitly confirmed deletion in their last message") boolean confirmDeletion,
             ToolContext toolContext
     ) {
+        String userId = (String) toolContext
+                .getContext()
+                .get("userId");
 
-        String userId = (String) toolContext.getContext().get("userId");
+        if (!confirmDeletion) {
 
-        log.warn("Tool deleteUrl userId: {} slug: {}", userId, slug);
+            UrlOperationsService.UrlDetails details = resilientUrlOps
+                    .getDetails(slug, userId)
+                    .join();
+
+            String target = details != null ? details.originalUrl() : slug;
+
+            log.info("Tool deleteUrl userId: {} slug: {} - awaiting explicit confirmation", userId, slug);
+
+            return "This will permanently delete '%s' -> %s. Please confirm with the user before calling delete_url again with confirmDeletion=true."
+                    .formatted(slug, target);
+        }
+
+        log.warn("Tool deleteUrl userId: {} slug: {} - confirmed, deleting", userId, slug);
 
         try {
 
-            boolean deleted =
-                    resilientUrlOps
-                            .delete(slug, userId)
-                            .join();
+            boolean deleted = resilientUrlOps.delete(slug, userId).join();
 
-            if (!deleted) {
-                return "Could not delete '%s': url-service temporarily unavailable."
-                        .formatted(slug);
-            }
-
-            log.info(
-                    "deleteUrl completed userId: {} slug: {}",
-                    userId,
-                    slug
-            );
-
-            return "Deleted URL with slug: " + slug;
+            return deleted
+                    ? "Deleted URL with slug: " + slug
+                    : "Could not delete '%s': url-service temporarily unavailable."
+                    .formatted(slug);
 
         } catch (Exception ex) {
 
-            log.error(
-                    "Failed to delete URL for userId: {} slug: {}",
-                    userId,
-                    slug,
-                    ex
-            );
+            log.error("Failed to delete URL for userId: {} slug: {}", userId, slug, ex);
 
-            return "Could not delete '%s': url-service temporarily unavailable."
-                    .formatted(slug);
+            return "Could not delete '%s': url-service temporarily unavailable.".formatted(slug);
         }
     }
 }
