@@ -114,6 +114,14 @@ resilience4j:
         timeout-duration: 30s
         cancel-running-future: false
 
+      ai-service:
+        timeout-duration: 30s
+        cancel-running-future: false
+
+      ai-agent:
+        timeout-duration: 45s   # allows for multistep tool-calling, not just one completion
+        cancel-running-future: false
+
   circuitbreaker:
     instances:
       ai-service:
@@ -157,6 +165,7 @@ resilience4j:
           - org.springframework.web.client.ResourceAccessException
           - org.springframework.web.client.HttpServerErrorException
           - java.util.concurrent.TimeoutException
+
       analytics-service:
         registerHealthIndicator: true
         slidingWindowType: COUNT_BASED
@@ -175,6 +184,15 @@ resilience4j:
           - org.springframework.web.client.HttpServerErrorException
           - java.util.concurrent.TimeoutException
 
+      ai-agent:
+        registerHealthIndicator: true
+        slidingWindowType: COUNT_BASED
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        failureRateThreshold: 50
+        slowCallDurationThreshold: 40s   # a bit under the 45s timelimiter, catches "slow" before "hung"
+        slowCallRateThreshold: 50
+
   retry:
     instances:
       url-service:
@@ -183,14 +201,23 @@ resilience4j:
         retryExceptions:
           - org.springframework.web.client.ResourceAccessException
           - org.springframework.web.client.HttpServerErrorException
+
       analytics-service:
         maxAttempts: 3
         waitDuration: 500ms
         retryExceptions:
           - org.springframework.web.client.ResourceAccessException
           - org.springframework.web.client.HttpServerErrorException
+
       ai-service:
         maxAttempts: 3
+        waitDuration: 500ms
+        retryExceptions:
+          - org.springframework.web.client.ResourceAccessException
+          - org.springframework.web.client.HttpServerErrorException
+
+      ai-agent:
+        maxAttempts: 2
         waitDuration: 500ms
         retryExceptions:
           - org.springframework.web.client.ResourceAccessException
