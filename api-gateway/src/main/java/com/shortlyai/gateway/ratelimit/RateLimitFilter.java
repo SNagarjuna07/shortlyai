@@ -2,6 +2,7 @@ package com.shortlyai.gateway.ratelimit;
 
 import com.shortlyai.gateway.dto.ErrorResponse;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
@@ -86,7 +87,16 @@ public class RateLimitFilter implements GlobalFilter, Ordered {
                         return chain.filter(exchange);
                     }
 
+                    String traceId = exchange
+                            .getRequest()
+                            .getHeaders()
+                            .getFirst("X-Trace-Id");
+
+                    MDC.put("traceId", traceId);
+
                     log.warn("Rate limit hit for route: {}, path: {}", routeId, path);
+
+                    MDC.remove("traceId");
 
                     return writeError(exchange,
                             HttpStatus.TOO_MANY_REQUESTS,
@@ -95,8 +105,17 @@ public class RateLimitFilter implements GlobalFilter, Ordered {
                 })
                 .onErrorResume(ex -> {
 
+                    String traceId = exchange
+                            .getRequest()
+                            .getHeaders()
+                            .getFirst("X-Trace-Id");
+
+                    MDC.put("traceId", traceId);
+
                     // Fail open - Redis down should not block all traffic
                     log.error("Rate limiter error on route: {}, failing open: {}", routeId, ex.getMessage());
+
+                    MDC.remove("traceId");
 
                     return chain.filter(exchange);
                 });
