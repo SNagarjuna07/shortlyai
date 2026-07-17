@@ -1,4 +1,4 @@
-gitpackage com.shortlyai.ai.common.exception;
+package com.shortlyai.ai.common.exception;
 
 import java.time.Instant;
 
