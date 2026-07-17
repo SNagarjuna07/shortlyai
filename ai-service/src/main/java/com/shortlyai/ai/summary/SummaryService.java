@@ -3,15 +3,21 @@ package com.shortlyai.ai.summary;
 import com.shortlyai.ai.operations.AnalyticsOperationsService;
 import com.shortlyai.ai.operations.ResilientAnalyticsOps;
 import com.shortlyai.ai.summary.dto.SummaryResponse;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
+import io.github.resilience4j.timelimiter.annotation.TimeLimiter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.prompt.PromptTemplate;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.Executor;
 
 @Service
 @Slf4j
@@ -23,82 +29,81 @@ public class SummaryService {
 
     private final Resource summaryPrompt;
 
+    private final Executor resilientOpsExecutor;
+
     public SummaryService(
             ChatClient chatClient,
             ResilientAnalyticsOps resilientAnalyticsOps,
             @Value("classpath:prompts/summary-service-prompt/summary-prompt.st")
-            Resource summaryPrompt
+            Resource summaryPrompt,
+            @Qualifier("resilientOpsExecutor") Executor resilientOpsExecutor
     ) {
         this.chatClient = chatClient;
         this.resilientAnalyticsOps = resilientAnalyticsOps;
         this.summaryPrompt = summaryPrompt;
+        this.resilientOpsExecutor = resilientOpsExecutor;
     }
 
-    public SummaryResponse summarize(Long urlId, String userId) {
+    @CircuitBreaker(name = "ai-service", fallbackMethod = "summarizeFallback")
+    @Retry(name = "ai-service")
+    @TimeLimiter(name = "ai-service")
+    public CompletableFuture<SummaryResponse> summarize(Long urlId, String userId) {
 
-        log.info("Generating summary for urlId={} userId={}", urlId, userId);
+        return CompletableFuture.supplyAsync(() -> {
 
-        try {
+            log.info("Generating summary for urlId: {} userId: {}", urlId, userId);
 
-            AnalyticsOperationsService.StatsResult stats =
-                    resilientAnalyticsOps
-                            .getStats(urlId, userId)
-                            .join();
+            AnalyticsOperationsService.StatsResult stats;
+
+            try {
+
+                stats = resilientAnalyticsOps.getStats(urlId, userId).join();
+
+            } catch (CompletionException ex) {
+
+                log.error("Failed to fetch analytics while generating summary for urlId: {}", urlId, ex);
+
+                throw ex;   // let CircuitBreaker/Retry/TimeLimiter see this as a real failure
+            }
 
             // Circuit breaker open, timeout, retries exhausted, etc.
             if (stats == null) {
 
-                log.warn(
-                        "analytics-service unavailable while generating summary for urlId={}",
-                        urlId
-                );
+                log.warn("analytics-service unavailable while generating summary for urlId: {}", urlId);
 
-                return summarizeFallback();
+                throw new IllegalStateException("analytics-service returned no data for urlId= " + urlId);
             }
 
             PromptTemplate template = new PromptTemplate(summaryPrompt);
 
             String prompt = template
                     .render(
-                            Map.of("clicks", stats.totalClicks())
+                            Map.of(
+                                    "clicks",
+                                    stats.totalClicks()
+                            )
                     );
 
-            String text = chatClient
-                    .prompt()
-                    .user(prompt)
-                    .call()
-                    .content();
+            String text = chatClient.prompt().user(prompt).call().content();
+
+            if (text == null || text.isBlank()) {
+                throw new IllegalStateException("LLM returned empty summary for urlId=" + urlId);
+            }
 
             log.debug("Summary generated for urlId={}: {}", urlId, text);
 
             return new SummaryResponse(text);
 
-        } catch (CompletionException ex) {
-
-            log.error(
-                    "Failed to fetch analytics while generating summary for urlId={}",
-                    urlId,
-                    ex
-            );
-
-            return summarizeFallback();
-
-        } catch (Exception ex) {
-
-            log.error(
-                    "Unexpected error while generating summary for urlId={}",
-                    urlId,
-                    ex
-            );
-
-            return summarizeFallback();
-        }
+        }, resilientOpsExecutor);
     }
 
-    private SummaryResponse summarizeFallback() {
 
-        return new SummaryResponse(
-                "Performance statistics are temporarily unavailable. Please check back shortly."
+    public CompletableFuture<SummaryResponse> summarizeFallback(Long urlId, String userId, Throwable ex) {
+
+        log.error("Summary unavailable for urlId={} userId={}", urlId, userId, ex);
+
+        return CompletableFuture.completedFuture(
+                new SummaryResponse("Performance statistics are temporarily unavailable. Please check back shortly.")
         );
     }
 }

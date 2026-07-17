@@ -4,6 +4,8 @@ import com.shortlyai.ai.summary.dto.SummaryResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -19,11 +21,17 @@ public class SummaryController {
             description = "The AI agent gets the URL's stats and generates a summary of number of clicks, its tag etc"
     )
     @GetMapping("/{urlId}")
-    public SummaryResponse summarize(
-            @PathVariable Long urlId,
-            @RequestHeader("X-User-Id") String userId
+    public ResponseEntity<SummaryResponse> summarize(
+            @PathVariable
+            Long urlId,
+            @RequestHeader("X-User-Id")
+            String userId
     ) {
 
-        return summaryService.summarize(urlId, userId);
+        return ResponseEntity.status(HttpStatus.OK)
+                .body(
+                        summaryService.summarize(urlId, userId)
+                                .join()
+                );
     }
 }
