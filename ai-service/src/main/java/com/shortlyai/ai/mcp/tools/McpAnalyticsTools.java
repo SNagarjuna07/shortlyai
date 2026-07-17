@@ -103,13 +103,13 @@ public class McpAnalyticsTools {
             count - no follow-up call needed for basic info.
             """)
     public String getTopUrls(
-            @McpToolParam(description = "How many top URLs to return (e.g. 5)", required = true)
+            @McpToolParam(description = "how many top URLs to return")
             int limit
     ) {
 
         String userId = authenticatedUserId();
 
-        log.info("MCP get-top-urls invoked for userId: {}, limit: {}", userId, limit);
+        log.info("Tool getTopUrls userId: {} limit: {}", userId, limit);
 
         try {
 
@@ -118,56 +118,35 @@ public class McpAnalyticsTools {
                             .getTopUrls(limit, userId)
                             .join();
 
-            if (topUrls.isEmpty()) {
-                return "No URLs found.";
+            if (topUrls == null) {
+                // the actual failure case - CB open, timeout, retries exhausted
+                return "Top URLs temporarily unavailable, analytics-service is down.";
             }
 
-            StringBuilder sb = new StringBuilder("Top %d URLs:%n".formatted(topUrls.size()));
+            if (topUrls.isEmpty()) {
+                // genuinely no data yet - not a failure
+                return "You don't have any URLs with recorded clicks yet.";
+            }
+
+            log.debug("getTopUrls userId: {} count: {}", userId, topUrls.size());
+
+            StringBuilder sb = new StringBuilder("Top URLs:\n");
 
             for (AnalyticsOperationsService.TopUrlResult url : topUrls) {
-
-                // N calls to url-service here, one per top-url entry - see note
-                // above the class. Fine at small limits, worth revisiting if the
-                // max limit ever grows.
-                UrlOperationsService.UrlDetails details = resilientUrlOps
-                        .getDetailsById(url.urlId(), userId)
-                        .join();
-
-                if (details == null) {
-
-                    log.warn("MCP get-top-urls: urlId {} in analytics but not found in url-service, skipping", url.urlId());
-
-                    continue;
-                }
-
-                sb.append("- %s -> %s (short: %s): %d clicks%n"
-                        .formatted(
-                                details.slug(),
-                                details.originalUrl(),
-                                details.shortUrl(),
-                                url.clickCount()
-                        )
-                );
+                sb.append("- urlId ")
+                        .append(url.urlId())
+                        .append(": ")
+                        .append(url.clickCount())
+                        .append(" clicks\n");
             }
 
             return sb.toString();
 
-        } catch (CompletionException e) {
+        } catch (Exception ex) {
 
-            if (e.getCause() instanceof HttpClientErrorException httpEx) {
+            log.error("Failed to fetch top URLs for userId: {} limit: {}", userId, limit, ex);
 
-                log.warn(
-                        "MCP get-top-urls 4xx userId: {}, limit: {}, status: {}",
-                        userId,
-                        limit,
-                        httpEx.getStatusCode()
-                );
-
-                return "Could not retrieve top URLs: %s"
-                        .formatted(httpEx.getStatusText());
-            }
-
-            throw e;
+            return "Top URLs temporarily unavailable, analytics-service is down.";
         }
     }
 }

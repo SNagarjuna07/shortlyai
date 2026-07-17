@@ -7,7 +7,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
@@ -82,6 +81,6 @@ public class ResilientAnalyticsOps {
                 ex
         );
 
-        return CompletableFuture.completedFuture(Collections.emptyList());
+        return CompletableFuture.completedFuture(null);
     }
 }
