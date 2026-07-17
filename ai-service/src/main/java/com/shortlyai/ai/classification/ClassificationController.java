@@ -6,6 +6,8 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -24,10 +26,15 @@ public class ClassificationController {
             description = "The AI agent classifies the URL into a category such as tech, finance etc."
     )
     @PostMapping
-    public ClassificationResponse classify(
-            @Valid @RequestBody ClassificationRequest request
+    public ResponseEntity<ClassificationResponse> classify(
+            @Valid @RequestBody
+            ClassificationRequest request
     ) {
 
-        return classificationService.classify(request);
+        return ResponseEntity.status(HttpStatus.OK)
+                .body(classificationService.classify(request)
+                        .join()
+                );
+
     }
 }
