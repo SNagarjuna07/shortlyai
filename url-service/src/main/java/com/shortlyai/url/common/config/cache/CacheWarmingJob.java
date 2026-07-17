@@ -3,7 +3,6 @@ package com.shortlyai.url.common.config.cache;
 import com.shortlyai.url.shortening.Url;
 import com.shortlyai.url.shortening.UrlRepository;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.data.domain.Page;
@@ -22,22 +21,15 @@ public class CacheWarmingJob {
 
     private final StringRedisTemplate stringRedisTemplate;
 
-    private final long ttl;
-
     private static final String WARM_LOCK_KEY = "lock:cache-warming";
-
-    // \u0000 (null byte)
-    // Format: "urlId\u0000userId\u0000expiresAtEpochMs\u0000originalUrl"
-    private static final String CACHE_SEP = "\u0000";
 
     public CacheWarmingJob(
             UrlRepository urlRepository,
-            StringRedisTemplate stringRedisTemplate,
-            @Value("${url.cache-ttl-seconds}") long ttl) {
+            StringRedisTemplate stringRedisTemplate
+    ) {
 
         this.urlRepository = urlRepository;
         this.stringRedisTemplate = stringRedisTemplate;
-        this.ttl = ttl;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -71,6 +63,7 @@ public class CacheWarmingJob {
                     warmedCount, mostActiveUrls.getNumberOfElements() - warmedCount);
 
         } finally {
+
             stringRedisTemplate.delete(WARM_LOCK_KEY);
         }
     }
