@@ -6,6 +6,8 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -24,10 +26,15 @@ public class SlugController {
             description = "The AI agent suggests several slugs to an URL depending on its context"
     )
     @PostMapping("/suggest")
-    public SlugResponse suggest(
-            @Valid @RequestBody SlugRequest request
+    public ResponseEntity<SlugResponse> suggest(
+            @Valid @RequestBody
+            SlugRequest request
     ) {
 
-        return slugService.suggest(request);
+        return ResponseEntity.status(HttpStatus.OK)
+                .body(
+                        slugService.suggest(request)
+                                .join()
+                );
     }
 }
