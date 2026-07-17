@@ -28,9 +28,12 @@ public class UrlCreatedEventListener {
 
         try {
 
-            ClassificationResponse classification = classificationService.classify(
-                    new ClassificationRequest(event.originalUrl())
-            );
+            ClassificationResponse classification =
+                    classificationService
+                            .classify(
+                                    new ClassificationRequest(event.originalUrl())
+                            )
+                            .join();
 
             UrlClassifiedEvent classifiedEvent = new UrlClassifiedEvent(
                     event.urlId(),
