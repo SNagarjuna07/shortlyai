@@ -63,10 +63,22 @@ public final class Base62 {
     // e.g. "dnh" → 12345
     // Used for reversibility — slug back to DB id for fast lookup
     public static long decode(String slug) {
+
+        if (slug == null || slug.isEmpty()) {
+            throw new IllegalArgumentException("Slug cannot be null or empty");
+        }
+
         long result = 0;
 
         for (char c : slug.toCharArray()) {
-            result = result * BASE + ALPHABET.indexOf(c); // positional value
+
+            int digit = ALPHABET.indexOf(c);
+
+            if (digit == -1) {
+                throw new IllegalArgumentException("Invalid Base62 character: '" + c + "' in slug: " + slug);
+            }
+
+            result = result * BASE + digit;
         }
 
         return result;
