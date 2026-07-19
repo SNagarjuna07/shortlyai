@@ -79,6 +79,7 @@ logging:
   level:
     root: info
     com.shortlyai: DEBUG
+    org.apache.kafka.common.config: OFF
 
 springdoc:
   swagger-ui:

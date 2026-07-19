@@ -85,6 +85,7 @@ logging:
     root: info
     com.shortlyai: DEBUG
     org.springframework.ai: DEBUG
+    org.apache.kafka.common.config: OFF
 
 services:
   url-service:
