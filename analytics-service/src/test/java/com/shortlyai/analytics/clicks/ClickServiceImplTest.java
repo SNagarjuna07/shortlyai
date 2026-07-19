@@ -13,12 +13,14 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.security.access.AccessDeniedException;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -214,5 +216,50 @@ class ClickServiceImplTest {
         assertThat(result).isEqualTo(expected);
 
         assertThat(pageableCaptor.getValue()).isEqualTo(PageRequest.of(0, 5));
+    }
+
+    @Test
+    void getTotalClicks_urlNotOwnedByCaller_throwsAccessDenied() {
+
+        Long urlId = 999L;
+        UUID callerId = UUID.fromString(USER_ID);
+
+        when(clickEventRepository.existsByUrlIdAndUserId(urlId, callerId)).thenReturn(false);
+
+        assertThatThrownBy(() -> clickService.getTotalClicks(urlId, callerId))
+                .isInstanceOf(AccessDeniedException.class);
+
+        // must never touch Redis/Postgres click data before the ownership check fails
+        verify(clickEventRepository, never()).countByUrlId(anyLong());
+    }
+
+    @Test
+    void getHourlyBreakdown_urlNotOwnedByCaller_throwsAccessDenied() {
+
+        Long urlId = 999L;
+        UUID callerId = UUID.fromString(USER_ID);
+
+        when(clickEventRepository.existsByUrlIdAndUserId(urlId, callerId)).thenReturn(false);
+
+        assertThatThrownBy(() -> clickService.getHourlyBreakdown(urlId, callerId, 24))
+                .isInstanceOf(AccessDeniedException.class);
+
+        verify(clickHourlyRepository, never()).findByUrlIdAndSince(anyLong(), any(Instant.class));
+    }
+
+    @Test
+    void getTotalClicks_urlOwnedByCaller_returnsStatsNormally() {
+
+        Long urlId = 42L;
+        UUID callerId = UUID.fromString(USER_ID);
+
+        when(clickEventRepository.existsByUrlIdAndUserId(urlId, callerId)).thenReturn(true);
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get("clicks:realtime:" + urlId)).thenReturn(null);
+        when(clickEventRepository.countByUrlId(urlId)).thenReturn(7L);
+
+        long result = clickService.getTotalClicks(urlId, callerId);
+
+        assertThat(result).isEqualTo(7L);
     }
 }
