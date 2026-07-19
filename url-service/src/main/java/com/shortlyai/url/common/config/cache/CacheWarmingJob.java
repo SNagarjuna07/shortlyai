@@ -3,6 +3,7 @@ package com.shortlyai.url.common.config.cache;
 import com.shortlyai.url.shortening.Url;
 import com.shortlyai.url.shortening.UrlRepository;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.data.domain.Page;
@@ -21,15 +22,23 @@ public class CacheWarmingJob {
 
     private final StringRedisTemplate stringRedisTemplate;
 
+    private final long cacheTtlSeconds;
+
     private static final String WARM_LOCK_KEY = "lock:cache-warming";
+
+    private static final String CACHE_PREFIX = "url:";
+
+    // Cache separator format
+    private static final String CACHE_SEP = "\u0000";
 
     public CacheWarmingJob(
             UrlRepository urlRepository,
-            StringRedisTemplate stringRedisTemplate
+            StringRedisTemplate stringRedisTemplate,
+            @Value("${url.cache-ttl-seconds}") long cacheTtlSeconds
     ) {
-
         this.urlRepository = urlRepository;
         this.stringRedisTemplate = stringRedisTemplate;
+        this.cacheTtlSeconds = cacheTtlSeconds;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -39,28 +48,43 @@ public class CacheWarmingJob {
                 .setIfAbsent(WARM_LOCK_KEY, "locked", Duration.ofMinutes(5));
 
         if (!Boolean.TRUE.equals(acquired)) {
+
             log.info("Cache warming already running on another instance, skipping");
+
             return;
         }
 
         try {
 
             Page<Url> mostActiveUrls = urlRepository
-                    .findByIsActiveTrueOrderByClickCountDesc(
-                            PageRequest.of(
-                                    0,
-                                    100
-                            )
-                    );
+                    .findByIsActiveTrueOrderByClickCountDesc(PageRequest.of(0, 100));
 
             Instant now = Instant.now();
+            long warmedCount = 0;
+            long skippedExpired = 0;
 
-            long warmedCount = mostActiveUrls.stream()
-                    .filter(url -> url.getExpiresAt() == null || url.getExpiresAt().isAfter(now))
-                    .count();
+            for (Url url : mostActiveUrls) {
 
-            log.info("Cache warmed with {} URLs (skipped {} expired)",
-                    warmedCount, mostActiveUrls.getNumberOfElements() - warmedCount);
+                if (url.getExpiresAt() != null && url.getExpiresAt().isBefore(now)) {
+                    skippedExpired++;
+                    continue;
+                }
+
+                long expiresAtMs = url.getExpiresAt() == null
+                        ? Long.MAX_VALUE
+                        : url.getExpiresAt().toEpochMilli();
+
+                stringRedisTemplate.opsForValue().set(
+                        CACHE_PREFIX + url.getSlug(),
+                        url.getId() + CACHE_SEP + url.getUserId() + CACHE_SEP
+                                + expiresAtMs + CACHE_SEP + url.getOriginalUrl(),
+                        Duration.ofSeconds(cacheTtlSeconds)
+                );
+
+                warmedCount++;
+            }
+
+            log.info("Cache warmed with {} URLs (skipped {} expired)", warmedCount, skippedExpired);
 
         } finally {
 
