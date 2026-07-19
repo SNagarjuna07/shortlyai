@@ -63,28 +63,30 @@ public class ClickServiceImpl implements ClickService {
     @Transactional(readOnly = true)
     public long getTotalClicks(Long urlId, UUID userId) {
 
-        // Try Redis first (real-time counter)
-        String redisKey = "clicks:realtime:" + urlId;
-
-        String cached = redisTemplate.opsForValue()
-                .get(redisKey);
-
+        // Verify the caller owns the URL before reading any click data.
         boolean owns = clickEventRepository.existsByUrlIdAndUserId(urlId, userId);
 
         if (!owns) {
-            throw new AccessDeniedException("URL not found");  // don't leak existence via a 403 vs 404 distinction
+            throw new AccessDeniedException("URL not found");
         }
+
+        // Try Redis first (real-time counter)
+        String redisKey = "clicks:realtime:" + urlId;
+
+        String cached = redisTemplate.opsForValue().get(redisKey);
 
         if (cached != null) {
 
             try {
 
                 return Long.parseLong(cached);
-            } catch (NumberFormatException e) {
+
+            } catch (NumberFormatException _) {
 
                 log.warn("Corrupt redis counter for urlId {}, falling back to DB", urlId);
             }
         }
+
         return clickEventRepository.countByUrlId(urlId);
     }
 

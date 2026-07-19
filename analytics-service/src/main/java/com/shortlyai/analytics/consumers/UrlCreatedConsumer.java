@@ -28,8 +28,8 @@ public class UrlCreatedConsumer {
             @Header(KafkaHeaders.OFFSET) long offset
     ) {
 
-        log.info("Received event: {}: slug= {} urlId= {} partition= {} offset= {}",
-                "${spring.kafka.topics.url-created}", event.slug(), event.urlId(), partition, offset);
+        log.info("Received event: url.created: slug= {} urlId= {} partition= {} offset= {}",
+                event.slug(), event.urlId(), partition, offset);
 
         clickService.initializeCounter(event);
     }
