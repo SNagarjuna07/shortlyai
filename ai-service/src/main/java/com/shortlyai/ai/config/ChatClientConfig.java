@@ -1,5 +1,6 @@
 package com.shortlyai.ai.config;
 
+import com.shortlyai.ai.advisor.AvailableToolsAndMetricsAdvisor;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
 import org.springframework.beans.factory.annotation.Value;
@@ -12,18 +13,23 @@ public class ChatClientConfig {
 
     private final Resource systemPrompt;
 
+    private final AvailableToolsAndMetricsAdvisor availableToolsAndMetricsAdvisor;
+
     public ChatClientConfig(
             @Value("classpath:prompts/base-prompt/system.st")
-            Resource systemPrompt
+            Resource systemPrompt,
+            AvailableToolsAndMetricsAdvisor availableToolsAndMetricsAdvisor
     ) {
         this.systemPrompt = systemPrompt;
+        this.availableToolsAndMetricsAdvisor = availableToolsAndMetricsAdvisor;
     }
 
     @Bean
     ChatClient chatClient(ChatClient.Builder builder) {
+
         return builder
                 .defaultSystem(systemPrompt)
-                .defaultAdvisors(new SimpleLoggerAdvisor())
+                .defaultAdvisors(new SimpleLoggerAdvisor(), availableToolsAndMetricsAdvisor)
                 .build();
     }
 }
