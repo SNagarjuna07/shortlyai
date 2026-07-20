@@ -54,7 +54,7 @@ public class SlugService {
                     .render(
                             Map.of(
                                     "url", request.url(),
-                                    "context", request.context()
+                                    "context", request.context() == null ? "" : request.context() // Map.of() throws NPE
                             )
                     );
 
