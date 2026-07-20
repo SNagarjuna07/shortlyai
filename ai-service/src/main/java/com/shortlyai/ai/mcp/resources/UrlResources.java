@@ -82,6 +82,15 @@ public class UrlResources {
                 .getAllForUser(userId)
                 .join();
 
+        // fallback returns null on real failure (CB open/timeout) - url-service
+        // genuinely having zero URLs would come back as an empty list, not null
+        if (allUrls == null) {
+
+            log.warn("MCP resource url-list userId: {} - url-service unavailable", userId);
+
+            throw new IllegalStateException("url-service is temporarily unavailable");
+        }
+
         List<UrlResource> resources = allUrls.stream()
                 .map(d ->
                         new UrlResource(

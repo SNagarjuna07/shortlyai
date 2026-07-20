@@ -42,6 +42,14 @@ public class AnalyticsResources {
                 .getTopUrls(TOP_URLS_RESOURCE_LIMIT, userId)
                 .join();
 
+        // fallback returns null on real failure (CB open/timeout)
+        if (topUrls == null) {
+
+            log.warn("MCP resource top-urls userId: {} - analytics-service unavailable", userId);
+
+            throw new IllegalStateException("analytics-service is temporarily unavailable");
+        }
+
         List<TopUrlEntry> entries = topUrls.stream()
                 .map(t ->
                         new TopUrlEntry(

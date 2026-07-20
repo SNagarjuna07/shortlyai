@@ -52,6 +52,14 @@ public class AnalyticsPrompts {
                 .getTopUrls(SUMMARY_TOP_N, userId)
                 .join();
 
+        // fallback returns null on real failure - must not reach topUrls.isEmpty() below
+        if (topUrls == null) {
+
+            log.warn("MCP prompt performance-summary userId: {} - analytics-service unavailable", userId);
+
+            throw new IllegalStateException("analytics-service is temporarily unavailable");
+        }
+
         String urlLines = topUrls.isEmpty()
                 ? "No URLs with recorded clicks yet."
                 : topUrls.stream()
