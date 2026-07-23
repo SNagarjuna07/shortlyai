@@ -124,6 +124,11 @@
   <!-- ── dependencies here go to ALL 5 services — keep minimal ── -->
   <dependencies>
 
+      <dependency>
+          <groupId>org.springframework.boot</groupId>
+          <artifactId>spring-boot-starter-opentelemetry</artifactId>
+      </dependency>
+
     <!-- Lombok — @Slf4j, @Builder, etc. (records replace most of this) -->
     <dependency>
       <groupId>org.projectlombok</groupId>
