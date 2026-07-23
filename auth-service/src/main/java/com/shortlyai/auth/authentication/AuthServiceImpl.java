@@ -2,10 +2,7 @@ package com.shortlyai.auth.authentication;
 
 import com.shortlyai.auth.audit.AuditEventType;
 import com.shortlyai.auth.audit.AuditLogService;
-import com.shortlyai.auth.common.exception.EmailAlreadyExistsException;
-import com.shortlyai.auth.common.exception.InvalidCredentialsException;
-import com.shortlyai.auth.common.exception.InvalidTokenException;
-import com.shortlyai.auth.common.exception.UserNotFoundException;
+import com.shortlyai.auth.common.exception.*;
 import com.shortlyai.auth.dto.*;
 import com.shortlyai.auth.email.VerificationService;
 import com.shortlyai.auth.security.JwtUtil;
@@ -66,6 +63,11 @@ public class AuthServiceImpl implements AuthService {
             auditLogService.log(AuditEventType.LOGIN_FAILED, user.getId(), httpRequest);
 
             throw new InvalidCredentialsException("Invalid email or password");
+        }
+
+        // Account verification check
+        if (!user.isVerified()) {
+            throw new AccountNotVerifiedException("Please verify your email before logging in");
         }
 
         // Step 3 - generate tokens
