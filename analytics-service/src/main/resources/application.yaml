@@ -32,6 +32,10 @@ spring:
 
   # Kafka — consume events published by url-service
   kafka:
+    template:
+      observation-enabled: true
+    listener:
+      observation-enabled: true
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     consumer:
       group-id: analytics-service-group  # consumer group - Kafka tracks offset per group
@@ -74,6 +78,21 @@ management:
   metrics:
     tags:
       application: ${spring.application.name}
+
+  tracing:
+    sampling:
+      probability: 1.0        # 100% in dev, drop to 0.1 in prod
+
+  opentelemetry:
+    tracing:
+      export:
+        otlp:
+          endpoint: http://localhost:4318/v1/traces
+
+  otlp:
+    metrics:
+      export:
+        enabled: false
 
 logging:
   level:

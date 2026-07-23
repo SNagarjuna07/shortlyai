@@ -179,6 +179,21 @@ management:
       percentiles:
         http.server.requests: 0.5,0.9,0.95,0.99
 
+  tracing:
+    sampling:
+      probability: 1.0        # 100% in dev, drop to 0.1 in prod
+
+  opentelemetry:
+    tracing:
+      export:
+        otlp:
+         endpoint: http://otel-collector:4318/v1/traces
+
+  otlp:
+    metrics:
+      export:
+        enabled: false
+
 logging:
   level:
     root: info
