@@ -14,6 +14,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -131,5 +132,96 @@ class ResilientUrlOpsTests {
                 resilientUrlOps.getAllForUserFallback("user-1", new RuntimeException("down"));
 
         assertThat(fallback.get()).isNull();
+    }
+
+    @Test
+    void getDetails_delegatesToUrlOpsAndReturnsResult() throws Exception {
+
+        UrlOperationsService.UrlDetails expected =
+                new UrlOperationsService.UrlDetails(1L, "abc123", "https://example.com", "http://short.ly/abc123", 5L);
+
+        when(urlOperationsService.getDetails("abc123", "user-1")).thenReturn(expected);
+
+        CompletableFuture<UrlOperationsService.UrlDetails> result =
+                resilientUrlOps.getDetails("abc123", "user-1");
+
+        assertThat(result.get()).isEqualTo(expected);
+    }
+
+    @Test
+    void getDetailsFallback_returnsNull_neverThrows() throws Exception {
+
+        CompletableFuture<UrlOperationsService.UrlDetails> fallback =
+                resilientUrlOps.getDetailsFallback("abc123", "user-1", new RuntimeException("down"));
+
+        assertThat(fallback.get()).isNull();
+        assertThat(fallback.isCompletedExceptionally()).isFalse();
+    }
+
+    @Test
+    void delete_delegatesToUrlOps_returnsTrue() throws Exception {
+
+        CompletableFuture<Boolean> result = resilientUrlOps.delete("abc123", "user-1");
+
+        assertThat(result.get()).isTrue();
+        verify(urlOperationsService).delete("abc123", "user-1");
+    }
+
+    @Test
+    void deleteFallback_returnsFalse_neverThrows() throws Exception {
+
+        CompletableFuture<Boolean> fallback =
+                resilientUrlOps.deleteFallback("abc123", "user-1", new RuntimeException("down"));
+
+        assertThat(fallback.get()).isFalse();
+        assertThat(fallback.isCompletedExceptionally()).isFalse();
+    }
+
+    @Test
+    void getDetailsById_delegatesAndReturnsResult() throws Exception {
+
+        UrlOperationsService.UrlDetails expected =
+                new UrlOperationsService.UrlDetails(7L, "xyz", "https://x.com", "http://short.ly/xyz", 3L);
+
+        when(urlOperationsService.getDetailsById(7L, "user-1")).thenReturn(expected);
+
+        CompletableFuture<UrlOperationsService.UrlDetails> result =
+                resilientUrlOps.getDetailsById(7L, "user-1");
+
+        assertThat(result.get()).isEqualTo(expected);
+    }
+
+    @Test
+    void getDetailsByIdFallback_returnsNull_neverThrows() throws Exception {
+
+        CompletableFuture<UrlOperationsService.UrlDetails> fallback =
+                resilientUrlOps.getDetailsByIdFallback(7L, "user-1", new RuntimeException("down"));
+
+        assertThat(fallback.get()).isNull();
+        assertThat(fallback.isCompletedExceptionally()).isFalse();
+    }
+
+    @Test
+    void getAllForUser_delegatesAndReturnsResult() throws Exception {
+
+        List<UrlResources.UrlResource> expected =
+                List.of(new UrlResources.UrlResource("abc", "https://a.com", "http://s.ly/abc", 1L));
+
+        when(urlOperationsService.getAllUrlsForUser("user-1")).thenReturn(expected);
+
+        CompletableFuture<List<UrlResources.UrlResource>> result =
+                resilientUrlOps.getAllForUser("user-1");
+
+        assertThat(result.get()).isEqualTo(expected);
+    }
+
+    @Test
+    void getAllForUserFallback_returnsNull_neverThrows() throws Exception {
+
+        CompletableFuture<List<UrlResources.UrlResource>> fallback =
+                resilientUrlOps.getAllForUserFallback("user-1", new RuntimeException("down"));
+
+        assertThat(fallback.get()).isNull();
+        assertThat(fallback.isCompletedExceptionally()).isFalse();
     }
 }
