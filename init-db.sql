@@ -4,3 +4,4 @@
 CREATE DATABASE shortlyai_auth;       -- auth-service
 CREATE DATABASE shortlyai_urls;       -- url-service
 CREATE DATABASE shortlyai_analytics;  -- analytics-service
+CREATE DATABASE shortlyai_ai;         -- ai-service
