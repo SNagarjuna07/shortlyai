@@ -1,7 +1,5 @@
-package com.shortlyai.ai.mcp;
+package com.shortlyai.ai.mcp.auth;
 
-import com.shortlyai.ai.mcp.auth.McpKeyFilter;
-import com.shortlyai.ai.mcp.auth.McpUserContext;
 import jakarta.servlet.FilterChain;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,7 +25,7 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
-class McpKeyFilterTest {
+class McpKeyFilterTests {
 
     @Mock
     StringRedisTemplate stringRedisTemplate;
