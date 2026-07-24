@@ -5,6 +5,19 @@ spring:
   application:
     name: ai-service
 
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.xml
+    enabled: true
+
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:5432/${DB_NAME:shortlyai_ai}
+    username: ${DB_USER:postgres}
+    password: ${DB_PASSWORD:postgres}
+    hikari:
+      maximum-pool-size: 8
+      minimum-idle: 3
+      connection-timeout: 30000
+
   ai:
     openai:
       api-key: ${GROQ_API_KEY:}
@@ -13,6 +26,15 @@ spring:
         model: ${GROQ_MODEL:llama-3.3-70b-versatile}
         temperature: ${GROQ_TEMPERATURE:0.3}
         max-tokens: ${GROQ_MAX_TOKENS:100}
+    chat:
+      client:
+        observations:
+          log-prompt: false
+          log-completion: true
+      memory:
+        repository:
+          jdbc:
+            initialize-schema: never
 
     mcp:
       server:
