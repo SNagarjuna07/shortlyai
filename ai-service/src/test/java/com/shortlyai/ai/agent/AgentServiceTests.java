@@ -11,6 +11,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
 
@@ -43,6 +44,9 @@ class AgentServiceTests {
     @Mock
     AnalyticsServiceTools analyticsServiceTools;
 
+    @Mock
+    ChatMemory chatMemory;
+
     private final Executor directExecutor = Runnable::run;
 
     private final Resource agentPrompt = new ByteArrayResource("You are ShortlyAI agent".getBytes(StandardCharsets.UTF_8));
@@ -52,7 +56,7 @@ class AgentServiceTests {
     @BeforeEach
     void setUp() {
 
-        agentService = new AgentService(chatClient, urlServiceTools, analyticsServiceTools, agentPrompt, directExecutor);
+        agentService = new AgentService(chatClient, urlServiceTools, analyticsServiceTools, agentPrompt, directExecutor, chatMemory);
 
         when(chatClient.prompt()).thenReturn(requestSpec);
         when(requestSpec.system(any(Resource.class))).thenReturn(requestSpec);
