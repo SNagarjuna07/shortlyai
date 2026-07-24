@@ -1,5 +1,6 @@
 package com.shortlyai.ai.agent;
 
+import com.openai.models.evals.runs.RunListResponse;
 import com.shortlyai.ai.agent.dto.AgentResponse;
 import com.shortlyai.ai.agent.tools.AnalyticsServiceTools;
 import com.shortlyai.ai.agent.tools.UrlServiceTools;
@@ -8,6 +9,8 @@ import io.github.resilience4j.retry.annotation.Retry;
 import io.github.resilience4j.timelimiter.annotation.TimeLimiter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
+import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
@@ -31,19 +34,23 @@ public class AgentService {
 
     private final Executor resilientOpsExecutor;
 
+    private final ChatMemory chatMemory;
+
     public AgentService(
             ChatClient chatClient,
             UrlServiceTools urlServiceTools,
             AnalyticsServiceTools analyticsServiceTools,
             @Value("classpath:prompts/agent-service-prompt/agent-prompt.st")
             Resource agentPrompt,
-            @Qualifier("resilientOpsExecutor") Executor resilientOpsExecutor
+            @Qualifier("resilientOpsExecutor") Executor resilientOpsExecutor,
+            ChatMemory chatMemory
     ) {
         this.chatClient = chatClient;
         this.urlServiceTools = urlServiceTools;
         this.analyticsServiceTools = analyticsServiceTools;
         this.agentPrompt = agentPrompt;
         this.resilientOpsExecutor = resilientOpsExecutor;
+        this.chatMemory = chatMemory;
     }
 
     @CircuitBreaker(name = "ai-agent", fallbackMethod = "chatFallback")
@@ -57,6 +64,14 @@ public class AgentService {
 
             String reply = chatClient.prompt()
                     .system(agentPrompt)
+                    .advisors(advisor ->
+                            advisor.advisors(
+                                            MessageChatMemoryAdvisor
+                                                    .builder(chatMemory)
+                                                    .build()
+                                    )
+                                    .param(ChatMemory.CONVERSATION_ID, userId)
+                    )
                     .user(message)
                     .tools(urlServiceTools, analyticsServiceTools)
                     .toolContext(Map.of("userId", userId))   // passed to @Tool methods, not seen by LLM
