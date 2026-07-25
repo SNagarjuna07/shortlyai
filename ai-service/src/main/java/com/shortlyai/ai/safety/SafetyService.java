@@ -2,20 +2,17 @@ package com.shortlyai.ai.safety;
 
 import com.shortlyai.ai.safety.dto.SafetyCheckRequest;
 import com.shortlyai.ai.safety.dto.SafetyCheckResponse;
+import com.shortlyai.ai.websearch.WebSearchTool;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import io.github.resilience4j.timelimiter.annotation.TimeLimiter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.prompt.PromptTemplate;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executor;
 
 @Service
 @Slf4j
@@ -23,69 +20,55 @@ public class SafetyService {
 
     private final ChatClient chatClient;
 
-    private final Resource safetyPrompt;
+    private final WebSearchTool webSearchTool;
 
-    private final Executor resilientOpsExecutor;
+    private final Resource safetyPrompt;
 
     public SafetyService(
             ChatClient chatClient,
+            WebSearchTool webSearchTool,
             @Value("classpath:prompts/safety-service-prompt/safety-prompt.st")
-            Resource safetyPrompt,
-            @Qualifier("resilientOpsExecutor") Executor resilientOpsExecutor
+            Resource safetyPrompt
     ) {
         this.chatClient = chatClient;
+        this.webSearchTool = webSearchTool;
         this.safetyPrompt = safetyPrompt;
-        this.resilientOpsExecutor = resilientOpsExecutor;
     }
 
-    @CircuitBreaker(name = "ai-service", fallbackMethod = "checkFallback")
-    @Retry(name = "ai-service")
-    @TimeLimiter(name = "ai-service")
-    public CompletableFuture<SafetyCheckResponse> check(SafetyCheckRequest request) {
+    @CircuitBreaker(name = "safetyCheck", fallbackMethod = "safetyCheckFallback")
+    @Retry(name = "safetyCheck")
+    @TimeLimiter(name = "safetyCheck")
+    public CompletableFuture<SafetyCheckResponse> checkSafety(SafetyCheckRequest safetyCheckRequest) {
 
         return CompletableFuture.supplyAsync(() -> {
 
-            log.info("Running safety check for url: {}", request.url());
-
-            PromptTemplate template = new PromptTemplate(safetyPrompt);
-
-            String prompt = template.render(Map.of("url", request.url()));
-
-            SafetyCheckResponse response = chatClient.prompt()
-                    .user(prompt)
+            SafetyCheckResponse result = chatClient.prompt()
+                    .system(s -> s
+                            .text(safetyPrompt)
+                            .param("url", safetyCheckRequest.url())
+                    )
+                    .user("Check this URL")
+                    .tools(webSearchTool)
                     .call()
                     .entity(SafetyCheckResponse.class);
 
-            if (response == null) {
-                throw new IllegalStateException("LLM returned unparseable response for safety check");
-            }
+            log.info("Safety check completed for url: {}, safe: {}, riskLevel: {}",
+                    safetyCheckRequest.url(), result.safe(), result.riskLevel());
 
-            if (response.safe()) {
-
-                log.debug("Safety check passed url: {}, riskLevel: {}", request.url(), response.riskLevel());
-
-            } else {
-
-                log.warn("Safety check FLAGGED url: {}, riskLevel: {}, reason: {}",
-                        request.url(), response.riskLevel(), response.reasoning());
-            }
-
-            return response;
-
-        }, resilientOpsExecutor);
+            return result;
+        });
     }
 
-    public CompletableFuture<SafetyCheckResponse> checkFallback(SafetyCheckRequest request, Throwable ex) {
+    public CompletableFuture<SafetyCheckResponse> safetyCheckFallback(
+            SafetyCheckRequest request,
+            Throwable t
+    ) {
 
-        log.error("Safety check unavailable for url: {}", request.url(), ex);
+        log.warn("Safety check failed, defaulting to unsafe for manual review, url: {}, reason: {}", request.url(), t.getMessage());
 
-        // fail CLOSED - "unknown" must never be reported as "safe"
+        // fail closed on infra failure
         return CompletableFuture.completedFuture(
-                new SafetyCheckResponse(
-                        false,
-                        "unknown",
-                        "Safety check temporarily unavailable"
-                )
+                new SafetyCheckResponse(false, "MEDIUM", "AI check unavailable - manual review needed")
         );
     }
 }

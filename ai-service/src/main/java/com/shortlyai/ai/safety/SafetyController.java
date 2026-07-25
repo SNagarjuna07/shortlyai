@@ -33,7 +33,7 @@ public class SafetyController {
 
         return ResponseEntity.status(HttpStatus.OK)
                 .body(
-                        safetyService.check(request)
+                        safetyService.checkSafety(request)
                                 .join()
                 );
     }
