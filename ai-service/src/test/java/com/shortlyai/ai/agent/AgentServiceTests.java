@@ -18,12 +18,10 @@ import org.springframework.core.io.Resource;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.concurrent.Executor;
+import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyMap;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -56,10 +54,19 @@ class AgentServiceTests {
     @BeforeEach
     void setUp() {
 
-        agentService = new AgentService(chatClient, urlServiceTools, analyticsServiceTools, agentPrompt, directExecutor, chatMemory);
+        agentService = new AgentService(
+                chatClient,
+                urlServiceTools,
+                analyticsServiceTools,
+                agentPrompt,
+                directExecutor,
+                chatMemory
+        );
 
         when(chatClient.prompt()).thenReturn(requestSpec);
+
         when(requestSpec.system(any(Resource.class))).thenReturn(requestSpec);
+        when(requestSpec.advisors(any(Consumer.class))).thenReturn(requestSpec);
         when(requestSpec.user(anyString())).thenReturn(requestSpec);
         when(requestSpec.tools(any(), any())).thenReturn(requestSpec);
         when(requestSpec.toolContext(anyMap())).thenReturn(requestSpec);
@@ -74,7 +81,7 @@ class AgentServiceTests {
         AgentResponse result = agentService.chat("user-1", "shorten https://example.com").join();
 
         assertThat(result.reply()).isEqualTo("Here's your short URL.");
-        org.mockito.Mockito.verify(requestSpec).toolContext(Map.of("userId", "user-1"));
+        verify(requestSpec).toolContext(Map.of("userId", "user-1"));
     }
 
     @Test
