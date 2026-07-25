@@ -2,22 +2,25 @@ package com.shortlyai.ai.safety;
 
 import com.shortlyai.ai.safety.dto.SafetyCheckRequest;
 import com.shortlyai.ai.safety.dto.SafetyCheckResponse;
+import com.shortlyai.ai.websearch.WebSearchTool;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
 
-import java.nio.charset.StandardCharsets;
-import java.util.concurrent.Executor;
+import java.util.concurrent.CompletionException;
+import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -33,63 +36,136 @@ class SafetyServiceTests {
     @Mock
     ChatClient.CallResponseSpec callResponseSpec;
 
-    private final Executor directExecutor = Runnable::run;
+    @Mock
+    WebSearchTool webSearchTool;
 
-    private final Resource prompt = new ByteArrayResource("Check safety of {url}".getBytes(StandardCharsets.UTF_8));
+    @Mock
+    Resource safetyPrompt;
 
     SafetyService safetyService;
 
     @BeforeEach
     void setUp() {
-        safetyService = new SafetyService(chatClient, prompt, directExecutor);
+
+        safetyService = new SafetyService(chatClient, webSearchTool, safetyPrompt);
 
         when(chatClient.prompt()).thenReturn(requestSpec);
+        when(requestSpec.system(any(Consumer.class))).thenReturn(requestSpec);
         when(requestSpec.user(anyString())).thenReturn(requestSpec);
+        when(requestSpec.tools(any(Object[].class))).thenReturn(requestSpec);
         when(requestSpec.call()).thenReturn(callResponseSpec);
     }
 
     @Test
-    void check_safeUrl_returnsSafeResponse() {
+    void checkSafety_unsafeUrl_returnsHighRisk() {
 
-        SafetyCheckResponse response = new SafetyCheckResponse(true, "LOW", "Looks fine");
+        SafetyCheckResponse response =
+                new SafetyCheckResponse(false, "HIGH", "Phishing indicators present");
+
         when(callResponseSpec.entity(SafetyCheckResponse.class)).thenReturn(response);
 
-        SafetyCheckResponse result = safetyService.check(new SafetyCheckRequest("https://example.com")).join();
-
-        assertThat(result.safe()).isTrue();
-    }
-
-    @Test
-    void check_unsafeUrl_returnsFlaggedResponse() {
-
-        SafetyCheckResponse response = new SafetyCheckResponse(false, "HIGH", "Phishing pattern detected");
-        when(callResponseSpec.entity(SafetyCheckResponse.class)).thenReturn(response);
-
-        SafetyCheckResponse result = safetyService.check(new SafetyCheckRequest("https://bad.com")).join();
+        SafetyCheckResponse result = safetyService.checkSafety(
+                new SafetyCheckRequest("http://verify-paypal-account-login.xyz")
+        ).join();
 
         assertThat(result.safe()).isFalse();
         assertThat(result.riskLevel()).isEqualTo("HIGH");
+        assertThat(result.reasoning()).isEqualTo("Phishing indicators present");
     }
 
     @Test
-    void check_llmReturnsNull_throwsIllegalState() {
+    void checkSafety_safeUrl_returnsLowRisk() {
 
-        when(callResponseSpec.entity(SafetyCheckResponse.class)).thenReturn(null);
+        SafetyCheckResponse response =
+                new SafetyCheckResponse(true, "LOW", "No issues detected");
 
-        assertThatThrownBy(() ->
-                safetyService.check(new SafetyCheckRequest("https://example.com")).join()
-        ).hasCauseInstanceOf(IllegalStateException.class);
-    }
+        when(callResponseSpec.entity(SafetyCheckResponse.class)).thenReturn(response);
 
-    @Test
-    void checkFallback_failsClosed_neverReportsafe() {
-
-        SafetyCheckResponse fallback = safetyService.checkFallback(
-                new SafetyCheckRequest("https://example.com"),
-                new RuntimeException("down")
+        SafetyCheckResponse result = safetyService.checkSafety(
+                new SafetyCheckRequest("https://github.com")
         ).join();
 
-        assertThat(fallback.safe()).isFalse();
-        assertThat(fallback.riskLevel()).isEqualTo("unknown");
+        assertThat(result.safe()).isTrue();
+        assertThat(result.riskLevel()).isEqualTo("LOW");
+        assertThat(result.reasoning()).isEqualTo("No issues detected");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void checkSafety_bindsPromptAndUrlToSystemSpec() {
+
+        when(callResponseSpec.entity(SafetyCheckResponse.class))
+                .thenReturn(new SafetyCheckResponse(true, "LOW", "Looks fine"));
+
+        safetyService.checkSafety(
+                new SafetyCheckRequest("https://example.com")
+        ).join();
+
+        ArgumentCaptor<Consumer<ChatClient.PromptSystemSpec>> captor =
+                ArgumentCaptor.forClass(Consumer.class);
+
+        verify(requestSpec).system(captor.capture());
+
+        ChatClient.PromptSystemSpec systemSpec =
+                mock(ChatClient.PromptSystemSpec.class);
+
+        when(systemSpec.text(any(Resource.class))).thenReturn(systemSpec);
+        when(systemSpec.param(anyString(), any())).thenReturn(systemSpec);
+
+        captor.getValue().accept(systemSpec);
+
+        verify(systemSpec).text(safetyPrompt);
+        verify(systemSpec).param("url", "https://example.com");
+
+        verify(requestSpec).user("Check this URL");
+        verify(requestSpec, never()).user(any(Consumer.class));
+    }
+
+    @Test
+    void checkSafety_registersWebSearchTool() {
+
+        when(callResponseSpec.entity(SafetyCheckResponse.class))
+                .thenReturn(new SafetyCheckResponse(true, "LOW", "Looks fine"));
+
+        safetyService.checkSafety(
+                new SafetyCheckRequest("https://example.com")
+        ).join();
+
+        verify(requestSpec).tools(webSearchTool);
+    }
+
+    @Test
+    void checkSafety_llmThrows_propagatesException() {
+
+        when(callResponseSpec.entity(SafetyCheckResponse.class))
+                .thenThrow(new RuntimeException("LLM timeout"));
+
+        assertThatThrownBy(() ->
+                safetyService.checkSafety(
+                        new SafetyCheckRequest("https://example.com")
+                ).join()
+        )
+                .isInstanceOf(CompletionException.class)
+                .hasCauseInstanceOf(RuntimeException.class)
+                .hasRootCauseMessage("LLM timeout");
+    }
+
+    @Test
+    void safetyCheckFallback_returnsUnsafeForManualReview() {
+
+        SafetyCheckRequest request =
+                new SafetyCheckRequest("https://example.com");
+
+        SafetyCheckResponse response = safetyService
+                .safetyCheckFallback(
+                        request,
+                        new RuntimeException("LLM unavailable")
+                )
+                .join();
+
+        assertThat(response.safe()).isFalse();
+        assertThat(response.riskLevel()).isEqualTo("MEDIUM");
+        assertThat(response.reasoning())
+                .contains("manual review");
     }
 }

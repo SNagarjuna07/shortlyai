@@ -2,22 +2,26 @@ package com.shortlyai.ai.classification;
 
 import com.shortlyai.ai.classification.dto.ClassificationRequest;
 import com.shortlyai.ai.classification.dto.ClassificationResponse;
+import com.shortlyai.ai.websearch.WebSearchTool;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
 
-import java.nio.charset.StandardCharsets;
-import java.util.concurrent.Executor;
+import java.util.List;
+import java.util.concurrent.CompletionException;
+import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -33,53 +37,139 @@ class ClassificationServiceTests {
     @Mock
     ChatClient.CallResponseSpec callResponseSpec;
 
-    private final Executor directExecutor = Runnable::run;
+    @Mock
+    WebSearchTool webSearchTool;
 
-    private final Resource prompt = new ByteArrayResource("Classify {url}".getBytes(StandardCharsets.UTF_8));
+    @Mock
+    Resource classifyPrompt;
 
     ClassificationService classificationService;
 
     @BeforeEach
     void setUp() {
-        classificationService = new ClassificationService(chatClient, prompt, directExecutor);
+
+        classificationService = new ClassificationService(
+                chatClient,
+                webSearchTool,
+                classifyPrompt
+        );
 
         when(chatClient.prompt()).thenReturn(requestSpec);
+        when(requestSpec.system(any(Consumer.class))).thenReturn(requestSpec);
         when(requestSpec.user(anyString())).thenReturn(requestSpec);
+        when(requestSpec.tools(any(Object[].class))).thenReturn(requestSpec);
         when(requestSpec.call()).thenReturn(callResponseSpec);
     }
 
     @Test
-    void classify_success_returnsLlmResponse() {
+    void classify_success_returnsCategory() {
 
-        ClassificationResponse response = new ClassificationResponse("Title", "tech", 0.9, java.util.List.of("java"));
-        when(callResponseSpec.entity(ClassificationResponse.class)).thenReturn(response);
+        ClassificationResponse response = new ClassificationResponse(
+                "Example Site",
+                "Tech",
+                0.9,
+                List.of("java", "backend")
+        );
+
+        when(callResponseSpec.entity(ClassificationResponse.class))
+                .thenReturn(response);
 
         ClassificationResponse result = classificationService.classify(
                 new ClassificationRequest("https://example.com")
         ).join();
 
-        assertThat(result).isEqualTo(response);
+        assertThat(result.title()).isEqualTo("Example Site");
+        assertThat(result.category()).isEqualTo("Tech");
+        assertThat(result.confidence()).isEqualTo(0.9);
+        assertThat(result.tags()).containsExactly("java", "backend");
     }
 
     @Test
-    void classify_llmReturnsNull_throwsIllegalState() {
+    @SuppressWarnings("unchecked")
+    void classify_bindsPromptAndUrlToSystemSpec() {
 
-        when(callResponseSpec.entity(ClassificationResponse.class)).thenReturn(null);
+        when(callResponseSpec.entity(ClassificationResponse.class))
+                .thenReturn(new ClassificationResponse(
+                        "Example",
+                        "Tech",
+                        0.8,
+                        List.of()
+                ));
 
-        assertThatThrownBy(() ->
-                classificationService.classify(new ClassificationRequest("https://example.com")).join()
-        ).hasCauseInstanceOf(IllegalStateException.class);
-    }
-
-    @Test
-    void classifyFallback_returnsUnknownCategory() {
-
-        ClassificationResponse fallback = classificationService.classifyFallback(
-                new ClassificationRequest("https://example.com"),
-                new RuntimeException("down")
+        classificationService.classify(
+                new ClassificationRequest("https://example.com")
         ).join();
 
-        assertThat(fallback.category()).isEqualTo("uncategorized");
+        ArgumentCaptor<Consumer<ChatClient.PromptSystemSpec>> captor =
+                ArgumentCaptor.forClass(Consumer.class);
+
+        verify(requestSpec).system(captor.capture());
+
+        ChatClient.PromptSystemSpec systemSpec =
+                mock(ChatClient.PromptSystemSpec.class);
+
+        when(systemSpec.text(any(Resource.class))).thenReturn(systemSpec);
+        when(systemSpec.param(anyString(), any())).thenReturn(systemSpec);
+
+        captor.getValue().accept(systemSpec);
+
+        verify(systemSpec).text(classifyPrompt);
+        verify(systemSpec).param("url", "https://example.com");
+
+        verify(requestSpec).user("Classify this URL");
+        verify(requestSpec, never()).user(any(Consumer.class));
+    }
+
+    @Test
+    void classify_registersWebSearchTool() {
+
+        when(callResponseSpec.entity(ClassificationResponse.class))
+                .thenReturn(new ClassificationResponse(
+                        "Example",
+                        "Tech",
+                        0.8,
+                        List.of()
+                ));
+
+        classificationService.classify(
+                new ClassificationRequest("https://example.com")
+        ).join();
+
+        verify(requestSpec).tools(webSearchTool);
+    }
+
+    @Test
+    void classify_llmThrows_propagatesException() {
+
+        when(callResponseSpec.entity(ClassificationResponse.class))
+                .thenThrow(new RuntimeException("LLM timeout"));
+
+        assertThatThrownBy(() ->
+                classificationService.classify(
+                        new ClassificationRequest("https://example.com")
+                ).join()
+        )
+                .isInstanceOf(CompletionException.class)
+                .hasCauseInstanceOf(RuntimeException.class)
+                .hasRootCauseMessage("LLM timeout");
+    }
+
+    @Test
+    void classificationFallback_returnsUnknownWithZeroConfidence() {
+
+        ClassificationRequest request =
+                new ClassificationRequest("https://example.com");
+
+        ClassificationResponse fallback = classificationService
+                .classificationFallback(
+                        request,
+                        new RuntimeException("LLM unavailable")
+                )
+                .join();
+
+        assertThat(fallback.title()).isEqualTo(request.url());
+        assertThat(fallback.category()).isEqualTo("Unknown");
         assertThat(fallback.confidence()).isEqualTo(0.0);
+        assertThat(fallback.tags()).isEmpty();
     }
 }
