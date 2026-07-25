@@ -2,21 +2,18 @@ package com.shortlyai.ai.classification;
 
 import com.shortlyai.ai.classification.dto.ClassificationRequest;
 import com.shortlyai.ai.classification.dto.ClassificationResponse;
+import com.shortlyai.ai.websearch.WebSearchTool;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import io.github.resilience4j.timelimiter.annotation.TimeLimiter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.prompt.PromptTemplate;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executor;
 
 @Service
 @Slf4j
@@ -24,65 +21,50 @@ public class ClassificationService {
 
     private final ChatClient chatClient;
 
-    private final Resource classificationPrompt;
+    private final WebSearchTool webSearchTool;
 
-    private final Executor resilientOpsExecutor;
+    private final Resource classifyPrompt;
 
     public ClassificationService(
             ChatClient chatClient,
+            WebSearchTool webSearchTool,
             @Value("classpath:prompts/classification-service-prompt/classification-prompt.st")
-            Resource classificationPrompt,
-            @Qualifier("resilientOpsExecutor") Executor resilientOpsExecutor
+            Resource classifyPrompt
     ) {
         this.chatClient = chatClient;
-        this.classificationPrompt = classificationPrompt;
-        this.resilientOpsExecutor = resilientOpsExecutor;
+        this.webSearchTool = webSearchTool;
+        this.classifyPrompt = classifyPrompt;
     }
 
-    @CircuitBreaker(name = "ai-service", fallbackMethod = "classifyFallback")
-    @Retry(name = "ai-service")
-    @TimeLimiter(name = "ai-service")
-    public CompletableFuture<ClassificationResponse> classify(ClassificationRequest request) {
+    @CircuitBreaker(name = "classification", fallbackMethod = "classificationFallback")
+    @Retry(name = "classification")
+    @TimeLimiter(name = "classification")
+    public CompletableFuture<ClassificationResponse> classify(ClassificationRequest classificationRequest) {
 
         return CompletableFuture.supplyAsync(() -> {
 
-            log.info("Classifying URL: {}", request.url());
-
-            PromptTemplate template = new PromptTemplate(classificationPrompt);
-
-            String prompt = template.render(Map.of("url", request.url()));
-
-            ClassificationResponse response = chatClient.prompt()
-                    .user(prompt)
+            ClassificationResponse result = chatClient.prompt()
+                    .system(s ->
+                            s.text(classifyPrompt)
+                                    .param("url", classificationRequest.url())
+                    )
+                    .user("Classify this URL")
+                    .tools(webSearchTool)
                     .call()
                     .entity(ClassificationResponse.class);
 
-            if (response == null) {
+            log.info("Classified url: {} as: {}", classificationRequest.url(), result);
 
-                throw new IllegalStateException("LLM returned unparseable response for classification");
-            }
-
-            log.debug(
-                    "Classification result url: {}, category: {}, confidence: {}",
-                    request.url(), response.category(), response.confidence()
-            );
-
-            return response;
-
-        }, resilientOpsExecutor);
+            return result;
+        });
     }
 
-    public CompletableFuture<ClassificationResponse> classifyFallback(ClassificationRequest request, Throwable ex) {
+    public CompletableFuture<ClassificationResponse> classificationFallback(ClassificationRequest request, Throwable t) {
 
-        log.error("Classification unavailable for url: {}", request.url(), ex);
+        log.warn("Classification failed, url: {}, reason: {}", request.url(), t.getMessage());
 
         return CompletableFuture.completedFuture(
-                new ClassificationResponse(
-                        "Unknown",
-                        "uncategorized",
-                        0.0,
-                        List.of()
-                )
+                new ClassificationResponse(request.url(), "Unknown", 0.0, List.of())
         );
     }
 }
