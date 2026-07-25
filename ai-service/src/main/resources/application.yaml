@@ -129,6 +129,11 @@ logging:
     org.springframework.ai: DEBUG
     org.apache.kafka.common.config: OFF
 
+tavily:
+  api:
+    key: ${TAVILY_API_KEY}
+    base-url: https://api.tavily.com
+
 services:
   url-service:
     base-url: ${URL_SERVICE_BASE_URL:http://localhost:8082}
@@ -164,6 +169,16 @@ resilience4j:
       ai-agent:
         timeout-duration: 45s   # allows for multistep tool-calling, not just one completion
         cancel-running-future: false
+
+      webSearch:
+        timeoutDuration: 30s
+        cancelRunningFuture: false
+      safetyCheck:
+        timeoutDuration: 30s
+        cancelRunningFuture: false
+      classification:
+          timeoutDuration: 30s
+          cancelRunningFuture: false
 
   circuitbreaker:
     instances:
@@ -236,6 +251,22 @@ resilience4j:
         slowCallDurationThreshold: 40s   # a bit under the 45s timelimiter, catches "slow" before "hung"
         slowCallRateThreshold: 50
 
+      webSearch:
+        slidingWindowSize: 10
+        failureRateThreshold: 50
+        slowCallDurationThreshold: 2s
+        waitDurationInOpenState: 20s
+      safetyCheck:
+        slidingWindowSize: 10
+        failureRateThreshold: 50
+        slowCallDurationThreshold: 2s
+        waitDurationInOpenState: 20s
+      classification:
+        slidingWindowSize: 10
+        failureRateThreshold: 50
+        slowCallDurationThreshold: 2s
+        waitDurationInOpenState: 20s
+
   retry:
     instances:
       url-service:
@@ -265,6 +296,32 @@ resilience4j:
         retryExceptions:
           - org.springframework.web.client.ResourceAccessException
           - org.springframework.web.client.HttpServerErrorException
+
+      webSearch:
+        maxAttempts: 2
+        waitDuration: 500ms
+        retryExceptions:
+          - org.springframework.web.client.ResourceAccessException   # connect timeout, connection refused, DNS failure
+          - java.io.IOException                                       # network-level transient errors
+          - org.springframework.web.client.HttpServerErrorException  # Brave 5xx - their side is having issues, worth retrying
+        ignoreExceptions:
+          - org.springframework.web.client.HttpClientErrorException  # Brave 4xx - bad key (401), bad query (400)
+      safetyCheck:
+          maxAttempts: 2
+          waitDuration: 500ms
+          retryExceptions:
+            - org.springframework.ai.retry.TransientAiException      # provider says: 429 rate limited, 503 overloaded, 500
+            - java.util.concurrent.TimeoutException
+          ignoreExceptions:
+            - org.springframework.ai.retry.NonTransientAiException   # provider says: 400 bad request, 401 auth, 404 model not found
+      classification:
+          maxAttempts: 2
+          waitDuration: 500ms
+          retryExceptions:
+            - org.springframework.ai.retry.TransientAiException
+            - java.util.concurrent.TimeoutException
+          ignoreExceptions:
+            - org.springframework.ai.retry.NonTransientAiException
 
 springdoc:
   swagger-ui:
