@@ -1,10 +1,12 @@
 package com.shortlyai.ai.operations;
 
+import io.github.resilience4j.bulkhead.annotation.Bulkhead;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import io.github.resilience4j.timelimiter.annotation.TimeLimiter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -12,7 +14,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class ResilientAnalyticsOps {
 
@@ -20,6 +21,16 @@ public class ResilientAnalyticsOps {
 
     private final Executor resilientOpsExecutor;
 
+    public ResilientAnalyticsOps(
+            AnalyticsOperationsService analyticsOps,
+            @Qualifier("resilientOpsExecutor")
+            Executor resilientOpsExecutor
+    ) {
+        this.analyticsOps = analyticsOps;
+        this.resilientOpsExecutor = resilientOpsExecutor;
+    }
+
+    @Bulkhead(name = "analytics-service", type = Bulkhead.Type.SEMAPHORE)
     @CircuitBreaker(name = "analytics-service", fallbackMethod = "getStatsFallback")
     @Retry(name = "analytics-service")
     @TimeLimiter(name = "analytics-service")
@@ -44,14 +55,13 @@ public class ResilientAnalyticsOps {
 
         log.error(
                 "analytics-service is not available for urlId: {}, userId: {}. Please try after some time",
-                urlId,
-                userId,
-                ex
+                urlId, userId, ex
         );
 
         return CompletableFuture.completedFuture(null);
     }
 
+    @Bulkhead(name = "analytics-service", type = Bulkhead.Type.SEMAPHORE)
     @CircuitBreaker(name = "analytics-service", fallbackMethod = "getTopUrlsFallback")
     @Retry(name = "analytics-service")
     @TimeLimiter(name = "analytics-service")
@@ -76,9 +86,7 @@ public class ResilientAnalyticsOps {
 
         log.error(
                 "analytics-service is unavailable for limit: {}, userId: {}. Failed to fetch your top URLs. Please try again later",
-                limit,
-                userId,
-                ex
+                limit, userId, ex
         );
 
         return CompletableFuture.completedFuture(null);

@@ -2,6 +2,7 @@ package com.shortlyai.ai.slug;
 
 import com.shortlyai.ai.slug.dto.SlugRequest;
 import com.shortlyai.ai.slug.dto.SlugResponse;
+import io.github.resilience4j.bulkhead.annotation.Bulkhead;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import io.github.resilience4j.timelimiter.annotation.TimeLimiter;
@@ -32,13 +33,15 @@ public class SlugService {
             ChatClient chatClient,
             @Value("classpath:prompts/slug-service-prompt/slug-prompt.st")
             Resource slugPrompt,
-            @Qualifier("resilientOpsExecutor") Executor resilientOpsExecutor
+            @Qualifier("resilientOpsExecutor")
+            Executor resilientOpsExecutor
     ) {
         this.chatClient = chatClient;
         this.slugPrompt = slugPrompt;
         this.resilientOpsExecutor = resilientOpsExecutor;
     }
 
+    @Bulkhead(name = "ai-service", type = Bulkhead.Type.SEMAPHORE)
     @CircuitBreaker(name = "ai-service", fallbackMethod = "suggestFallback")
     @Retry(name = "ai-service")
     @TimeLimiter(name = "ai-service")

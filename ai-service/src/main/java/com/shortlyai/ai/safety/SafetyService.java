@@ -3,16 +3,19 @@ package com.shortlyai.ai.safety;
 import com.shortlyai.ai.safety.dto.SafetyCheckRequest;
 import com.shortlyai.ai.safety.dto.SafetyCheckResponse;
 import com.shortlyai.ai.websearch.WebSearchTool;
+import io.github.resilience4j.bulkhead.annotation.Bulkhead;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import io.github.resilience4j.timelimiter.annotation.TimeLimiter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 
 @Service
 @Slf4j
@@ -22,19 +25,25 @@ public class SafetyService {
 
     private final WebSearchTool webSearchTool;
 
+    private final Executor resilientOpsExecutor;
+
     private final Resource safetyPrompt;
 
     public SafetyService(
             ChatClient chatClient,
             WebSearchTool webSearchTool,
+            @Qualifier("resilientOpsExecutor")
+            Executor resilientOpsExecutor,
             @Value("classpath:prompts/safety-service-prompt/safety-prompt.st")
             Resource safetyPrompt
     ) {
         this.chatClient = chatClient;
         this.webSearchTool = webSearchTool;
+        this.resilientOpsExecutor = resilientOpsExecutor;
         this.safetyPrompt = safetyPrompt;
     }
 
+    @Bulkhead(name = "ai-service", type = Bulkhead.Type.SEMAPHORE)
     @CircuitBreaker(name = "safetyCheck", fallbackMethod = "safetyCheckFallback")
     @Retry(name = "safetyCheck")
     @TimeLimiter(name = "safetyCheck")
@@ -42,21 +51,23 @@ public class SafetyService {
 
         return CompletableFuture.supplyAsync(() -> {
 
-            SafetyCheckResponse result = chatClient.prompt()
-                    .system(s -> s
-                            .text(safetyPrompt)
-                            .param("url", safetyCheckRequest.url())
-                    )
-                    .user("Check this URL")
-                    .tools(webSearchTool)
-                    .call()
-                    .entity(SafetyCheckResponse.class);
+                    SafetyCheckResponse result = chatClient.prompt()
+                            .system(s -> s
+                                    .text(safetyPrompt)
+                                    .param("url", safetyCheckRequest.url())
+                            )
+                            .user("Check this URL")
+                            .tools(webSearchTool)
+                            .call()
+                            .entity(SafetyCheckResponse.class);
 
-            log.info("Safety check completed for url: {}, safe: {}, riskLevel: {}",
-                    safetyCheckRequest.url(), result.safe(), result.riskLevel());
+                    log.info("Safety check completed for url: {}, safe: {}, riskLevel: {}",
+                            safetyCheckRequest.url(), result.safe(), result.riskLevel());
 
-            return result;
-        });
+                    return result;
+                },
+                resilientOpsExecutor
+        );
     }
 
     public CompletableFuture<SafetyCheckResponse> safetyCheckFallback(

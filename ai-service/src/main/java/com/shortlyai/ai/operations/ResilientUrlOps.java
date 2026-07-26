@@ -1,20 +1,19 @@
 package com.shortlyai.ai.operations;
 
 import com.shortlyai.ai.mcp.resources.UrlResources;
+import io.github.resilience4j.bulkhead.annotation.Bulkhead;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import io.github.resilience4j.timelimiter.annotation.TimeLimiter;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 
-
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class ResilientUrlOps {
 
@@ -22,6 +21,16 @@ public class ResilientUrlOps {
 
     private final Executor resilientOpsExecutor;
 
+    public ResilientUrlOps(
+            UrlOperationsService urlOps,
+            @Qualifier("resilientOpsExecutor")
+            Executor resilientOpsExecutor
+    ) {
+        this.urlOps = urlOps;
+        this.resilientOpsExecutor = resilientOpsExecutor;
+    }
+
+    @Bulkhead(name = "url-service", type = Bulkhead.Type.SEMAPHORE)
     @CircuitBreaker(name = "url-service", fallbackMethod = "shortenFallback")
     @Retry(name = "url-service")
     @TimeLimiter(name = "url-service")
@@ -32,11 +41,8 @@ public class ResilientUrlOps {
 
         log.debug("Shortening URL for userId: {} url: {}", userId, originalUrl);
 
-        return CompletableFuture.supplyAsync(
-                () -> urlOps.shorten(
-                        originalUrl,
-                        userId
-                ),
+        return CompletableFuture.supplyAsync(() ->
+                        urlOps.shorten(originalUrl, userId),
                 resilientOpsExecutor
         );
     }
@@ -47,11 +53,12 @@ public class ResilientUrlOps {
             Throwable ex
     ) {
 
-        log.error("url-service is not available. Cannot shorten '{}'. Please try again later", originalUrl, ex);
+        log.error("url-service is not available. Cannot shorten '{}' for user: {}. Please try again later", originalUrl, userId, ex);
 
         return CompletableFuture.completedFuture(null);
     }
 
+    @Bulkhead(name = "url-service", type = Bulkhead.Type.SEMAPHORE)
     @CircuitBreaker(name = "url-service", fallbackMethod = "getDetailsFallback")
     @Retry(name = "url-service")
     @TimeLimiter(name = "url-service")
@@ -62,11 +69,8 @@ public class ResilientUrlOps {
 
         log.debug("Fetching URL details for userId: {} slug: {}", userId, slug);
 
-        return CompletableFuture.supplyAsync(
-                () -> urlOps.getDetails(
-                        slug,
-                        userId
-                ),
+        return CompletableFuture.supplyAsync(() ->
+                        urlOps.getDetails(slug, userId),
                 resilientOpsExecutor
         );
     }
@@ -77,11 +81,12 @@ public class ResilientUrlOps {
             Throwable ex
     ) {
 
-        log.error("url-service is not available while fetching slug: {}. Please try again later", slug, ex);
+        log.error("url-service is not available while fetching slug: {} for user {}. Please try again later", slug, userId, ex);
 
         return CompletableFuture.completedFuture(null);
     }
 
+    @Bulkhead(name = "url-service", type = Bulkhead.Type.SEMAPHORE)
     @CircuitBreaker(name = "url-service", fallbackMethod = "deleteFallback")
     @Retry(name = "url-service")
     @TimeLimiter(name = "url-service")
@@ -99,11 +104,12 @@ public class ResilientUrlOps {
 
     public CompletableFuture<Boolean> deleteFallback(String slug, String userId, Throwable ex) {
 
-        log.error("url-service unavailable - could not delete slug: {}", slug, ex);
+        log.error("url-service unavailable - could not delete slug: {} for user: {}", slug, userId, ex);
 
         return CompletableFuture.completedFuture(false);
     }
 
+    @Bulkhead(name = "url-service", type = Bulkhead.Type.SEMAPHORE)
     @CircuitBreaker(name = "url-service", fallbackMethod = "getDetailsByIdFallback")
     @Retry(name = "url-service")
     @TimeLimiter(name = "url-service")
@@ -114,19 +120,24 @@ public class ResilientUrlOps {
 
         log.info("Fetching URL details for userId: {} ", userId);
 
-        return CompletableFuture.supplyAsync(
-                () -> urlOps.getDetailsById(urlId, userId),
+        return CompletableFuture.supplyAsync(() ->
+                        urlOps.getDetailsById(urlId, userId),
                 resilientOpsExecutor
         );
     }
 
-    public CompletableFuture<UrlOperationsService.UrlDetails> getDetailsByIdFallback(Long urlId, String userId, Throwable ex) {
+    public CompletableFuture<UrlOperationsService.UrlDetails> getDetailsByIdFallback(
+            Long urlId,
+            String userId,
+            Throwable ex
+    ) {
 
-        log.error("url-service unavailable - could not fetch URL with ID: {}", urlId, ex);
+        log.error("url-service unavailable - could not fetch URL with ID: {} for user: {}", urlId, userId, ex);
 
         return CompletableFuture.completedFuture(null);
     }
 
+    @Bulkhead(name = "url-service", type = Bulkhead.Type.SEMAPHORE)
     @CircuitBreaker(name = "url-service", fallbackMethod = "getAllForUserFallback")
     @Retry(name = "url-service")
     @TimeLimiter(name = "url-service")
@@ -134,14 +145,13 @@ public class ResilientUrlOps {
 
         log.info("Fetching all URLs for userId: {} ", userId);
 
-        return CompletableFuture.supplyAsync(
-                () -> urlOps.getAllUrlsForUser(userId),
+        return CompletableFuture.supplyAsync(() ->
+                        urlOps.getAllUrlsForUser(userId),
                 resilientOpsExecutor
         );
-
     }
 
-    public CompletableFuture<List<UrlResources.UrlResource>>getAllForUserFallback(String userId, Throwable ex) {
+    public CompletableFuture<List<UrlResources.UrlResource>> getAllForUserFallback(String userId, Throwable ex) {
 
         log.error("url-service unavailable - could not fetch all URLs for userId: {}", userId, ex);
 

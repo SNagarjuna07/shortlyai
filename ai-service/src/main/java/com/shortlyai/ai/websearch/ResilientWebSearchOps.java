@@ -1,5 +1,6 @@
 package com.shortlyai.ai.websearch;
 
+import io.github.resilience4j.bulkhead.annotation.Bulkhead;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import io.github.resilience4j.timelimiter.annotation.TimeLimiter;
@@ -21,19 +22,22 @@ public class ResilientWebSearchOps {
 
     public ResilientWebSearchOps(
             WebSearchOperationsService webSearchOps,
-            @Qualifier("resilientOpsExecutor") Executor resilientOpsExecutor
+            @Qualifier("resilientOpsExecutor")
+            Executor resilientOpsExecutor
     ) {
         this.webSearchOps = webSearchOps;
         this.resilientOpsExecutor = resilientOpsExecutor;
     }
 
+    @Bulkhead(name = "webSearch", type = Bulkhead.Type.SEMAPHORE)
     @CircuitBreaker(name = "webSearch", fallbackMethod = "searchFallback")
     @Retry(name = "webSearch")
     @TimeLimiter(name = "webSearch")
     public CompletableFuture<List<String>> search(String query) {
 
         return CompletableFuture.supplyAsync(() ->
-                webSearchOps.search(query), resilientOpsExecutor);
+                        webSearchOps.search(query)
+                , resilientOpsExecutor);
     }
 
     public CompletableFuture<List<String>> searchFallback(String query, Throwable ex) {

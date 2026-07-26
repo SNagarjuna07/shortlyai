@@ -3,6 +3,7 @@ package com.shortlyai.ai.summary;
 import com.shortlyai.ai.operations.AnalyticsOperationsService;
 import com.shortlyai.ai.operations.ResilientAnalyticsOps;
 import com.shortlyai.ai.summary.dto.SummaryResponse;
+import io.github.resilience4j.bulkhead.annotation.Bulkhead;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import io.github.resilience4j.timelimiter.annotation.TimeLimiter;
@@ -36,7 +37,8 @@ public class SummaryService {
             ResilientAnalyticsOps resilientAnalyticsOps,
             @Value("classpath:prompts/summary-service-prompt/summary-prompt.st")
             Resource summaryPrompt,
-            @Qualifier("resilientOpsExecutor") Executor resilientOpsExecutor
+            @Qualifier("resilientOpsExecutor")
+            Executor resilientOpsExecutor
     ) {
         this.chatClient = chatClient;
         this.resilientAnalyticsOps = resilientAnalyticsOps;
@@ -44,6 +46,7 @@ public class SummaryService {
         this.resilientOpsExecutor = resilientOpsExecutor;
     }
 
+    @Bulkhead(name = "ai-service", type = Bulkhead.Type.SEMAPHORE)
     @CircuitBreaker(name = "ai-service", fallbackMethod = "summarizeFallback")
     @Retry(name = "ai-service")
     @TimeLimiter(name = "ai-service")

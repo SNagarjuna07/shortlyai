@@ -4,6 +4,7 @@ import com.openai.models.evals.runs.RunListResponse;
 import com.shortlyai.ai.agent.dto.AgentResponse;
 import com.shortlyai.ai.agent.tools.AnalyticsServiceTools;
 import com.shortlyai.ai.agent.tools.UrlServiceTools;
+import io.github.resilience4j.bulkhead.annotation.Bulkhead;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import io.github.resilience4j.timelimiter.annotation.TimeLimiter;
@@ -42,7 +43,8 @@ public class AgentService {
             AnalyticsServiceTools analyticsServiceTools,
             @Value("classpath:prompts/agent-service-prompt/agent-prompt.st")
             Resource agentPrompt,
-            @Qualifier("resilientOpsExecutor") Executor resilientOpsExecutor,
+            @Qualifier("resilientOpsExecutor")
+            Executor resilientOpsExecutor,
             ChatMemory chatMemory
     ) {
         this.chatClient = chatClient;
@@ -53,6 +55,7 @@ public class AgentService {
         this.chatMemory = chatMemory;
     }
 
+    @Bulkhead(name = "ai-agent", type = Bulkhead.Type.SEMAPHORE)
     @CircuitBreaker(name = "ai-agent", fallbackMethod = "chatFallback")
     @Retry(name = "ai-agent")
     @TimeLimiter(name = "ai-agent")
