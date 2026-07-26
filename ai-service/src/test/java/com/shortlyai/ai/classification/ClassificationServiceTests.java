@@ -16,6 +16,7 @@ import org.springframework.core.io.Resource;
 
 import java.util.List;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.Executor;
 import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -43,7 +44,9 @@ class ClassificationServiceTests {
     @Mock
     Resource classifyPrompt;
 
-    ClassificationService classificationService;
+    private final Executor resilientOpsExecutor = Runnable::run;
+
+    private ClassificationService classificationService;
 
     @BeforeEach
     void setUp() {
@@ -51,13 +54,14 @@ class ClassificationServiceTests {
         classificationService = new ClassificationService(
                 chatClient,
                 webSearchTool,
+                resilientOpsExecutor,
                 classifyPrompt
         );
 
         when(chatClient.prompt()).thenReturn(requestSpec);
         when(requestSpec.system(any(Consumer.class))).thenReturn(requestSpec);
         when(requestSpec.user(anyString())).thenReturn(requestSpec);
-        when(requestSpec.tools(any(Object[].class))).thenReturn(requestSpec);
+        when(requestSpec.tools(any())).thenReturn(requestSpec);
         when(requestSpec.call()).thenReturn(callResponseSpec);
     }
 

@@ -15,6 +15,7 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.core.io.Resource;
 
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.Executor;
 import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -42,17 +43,27 @@ class SafetyServiceTests {
     @Mock
     Resource safetyPrompt;
 
-    SafetyService safetyService;
+    private Executor resilientOpsExecutor;
+
+    private SafetyService safetyService;
 
     @BeforeEach
     void setUp() {
 
-        safetyService = new SafetyService(chatClient, webSearchTool, safetyPrompt);
+        // Execute CompletableFuture synchronously
+        resilientOpsExecutor = Runnable::run;
+
+        safetyService = new SafetyService(
+                chatClient,
+                webSearchTool,
+                resilientOpsExecutor,
+                safetyPrompt
+        );
 
         when(chatClient.prompt()).thenReturn(requestSpec);
         when(requestSpec.system(any(Consumer.class))).thenReturn(requestSpec);
         when(requestSpec.user(anyString())).thenReturn(requestSpec);
-        when(requestSpec.tools(any(Object[].class))).thenReturn(requestSpec);
+        when(requestSpec.tools(any())).thenReturn(requestSpec);
         when(requestSpec.call()).thenReturn(callResponseSpec);
     }
 
@@ -62,7 +73,8 @@ class SafetyServiceTests {
         SafetyCheckResponse response =
                 new SafetyCheckResponse(false, "HIGH", "Phishing indicators present");
 
-        when(callResponseSpec.entity(SafetyCheckResponse.class)).thenReturn(response);
+        when(callResponseSpec.entity(SafetyCheckResponse.class))
+                .thenReturn(response);
 
         SafetyCheckResponse result = safetyService.checkSafety(
                 new SafetyCheckRequest("http://verify-paypal-account-login.xyz")
@@ -79,7 +91,8 @@ class SafetyServiceTests {
         SafetyCheckResponse response =
                 new SafetyCheckResponse(true, "LOW", "No issues detected");
 
-        when(callResponseSpec.entity(SafetyCheckResponse.class)).thenReturn(response);
+        when(callResponseSpec.entity(SafetyCheckResponse.class))
+                .thenReturn(response);
 
         SafetyCheckResponse result = safetyService.checkSafety(
                 new SafetyCheckRequest("https://github.com")
