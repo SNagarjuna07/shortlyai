@@ -152,6 +152,26 @@ eureka:
     lease-expiration-duration-in-seconds: 30 # Eureka marks dead after 30s no heartbeat
 
 resilience4j:
+  bulkhead:
+    instances:
+      url-service:
+        maxConcurrentCalls: 50
+        maxWaitDuration: 0
+      analytics-service:
+        maxConcurrentCalls: 50
+        maxWaitDuration: 0
+      ai-service:
+        maxConcurrentCalls: 20
+        maxWaitDuration: 0
+      ai-agent:
+        maxConcurrentCalls: 15
+        maxWaitDuration: 0
+      webSearch:
+        maxConcurrentCalls: 10
+        maxWaitDuration: 0
+    metrics:
+      enabled: true
+
   timelimiter:
     instances:
       url-service:
