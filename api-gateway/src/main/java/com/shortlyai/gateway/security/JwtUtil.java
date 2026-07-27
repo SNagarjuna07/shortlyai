@@ -11,13 +11,11 @@ import org.springframework.stereotype.Component;
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 
-// Gateway-specific JwtUtil - validate + extract only, no token generation
+//validate + extract only, no token generation
 @Slf4j
 @Component
 public class JwtUtil {
 
-    // SecretKey - HMAC-SHA256 key derived from the raw secret string
-    // Must be at least 256 bits (32 chars) for HS256
     private final SecretKey signingKey;
 
     public JwtUtil(
@@ -27,7 +25,6 @@ public class JwtUtil {
     }
 
     // Returns true only if signature valid AND token not expired
-    // Used by JwtAuthFilter to gate every protected request
     public boolean isTokenValid(String token) {
 
         try {
@@ -50,18 +47,18 @@ public class JwtUtil {
         }
     }
 
-    // subject = userId UUID string set in auth-service buildToken()
     public String extractUserId(String token) {
         return extractAllClaims(token).getSubject();
     }
 
-    // "role" custom claim
     public String extractRole(String token) {
         return extractAllClaims(token).get("role", String.class);
     }
 
-    // parseSignedClaims - verifies HMAC signature + checks expiry automatically
-    // throws JwtException on tampered token, ExpiredJwtException on stale token
+    public boolean isAccessToken(String token) {
+        return "access".equals(extractAllClaims(token).get("type", String.class));
+    }
+
     private Claims extractAllClaims(String token) {
 
         return Jwts.parser()

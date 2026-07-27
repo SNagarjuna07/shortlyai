@@ -60,7 +60,10 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
                 })
                 .build();
 
-        ServerWebExchange strippedExchange = exchange.mutate().request(strippedRequest).build();
+        ServerWebExchange strippedExchange = exchange
+                .mutate()
+                .request(strippedRequest)
+                .build();
 
         if (isPublicPath(path)) {
 
@@ -83,7 +86,7 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
 
         String token = authHeader.substring(7);
 
-        if (!jwtUtil.isTokenValid(token)) {
+        if (!jwtUtil.isTokenValid(token) && !jwtUtil.isAccessToken(token)) {
 
             log.warn("Invalid or expired JWT for path: {}", path);
 
