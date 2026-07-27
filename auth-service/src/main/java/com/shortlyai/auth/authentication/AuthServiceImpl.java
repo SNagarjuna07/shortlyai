@@ -148,7 +148,7 @@ public class AuthServiceImpl implements AuthService {
     @Override
     public AuthResponse refresh(RefreshTokenRequest request, HttpServletRequest httpRequest) {
 
-        if (!jwtUtil.isTokenValid(request.refreshToken())) {
+        if (!jwtUtil.isTokenValid(request.refreshToken()) && jwtUtil.isAccessToken(request.refreshToken())) {
             throw new InvalidTokenException("Invalid refresh token");
         }
 

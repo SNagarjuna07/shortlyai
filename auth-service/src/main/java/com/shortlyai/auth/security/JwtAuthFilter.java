@@ -1,5 +1,3 @@
-
-
 package com.shortlyai.auth.security;
 
 import com.shortlyai.auth.common.exception.InvalidTokenException;
