@@ -1,5 +1,8 @@
+
+
 package com.shortlyai.auth.security;
 
+import com.shortlyai.auth.common.exception.InvalidTokenException;
 import io.jsonwebtoken.Claims;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -35,7 +38,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
             String token = header.substring(7);
 
-            if (jwtUtil.isTokenValid(token)) {
+            if (jwtUtil.isTokenValid(token) && jwtUtil.isAccessToken(token)) {
 
                 Claims claims = jwtUtil.extractAllClaims(token);
 
@@ -56,6 +59,10 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
 
                 SecurityContextHolder.getContext().setAuthentication(authToken);
+
+            } else {
+
+                throw new InvalidTokenException("Token not valid");
             }
         }
 
