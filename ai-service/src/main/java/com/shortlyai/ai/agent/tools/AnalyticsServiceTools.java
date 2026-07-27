@@ -80,9 +80,12 @@ public class AnalyticsServiceTools {
                             .getTopUrls(limit, userId)
                             .join();
 
-            // Empty list is the fallback sentinel from ResilientAnalyticsOps
-            if (topUrls.isEmpty()) {
+            if (topUrls == null) {
                 return "Top URLs temporarily unavailable, analytics-service is down.";
+            }
+
+            if (topUrls.isEmpty()) {
+                return "You don't have any URLs with recorded clicks yet.";
             }
 
             log.debug(
