@@ -3,6 +3,7 @@ package com.shortlyai.url.dlq;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.json.JsonMapper;
@@ -16,9 +17,9 @@ public class FailedEventService {
 
     private final JsonMapper jsonMapper;
 
-    // Called from Kafka whenComplete callback — that runs on Kafka I/O thread,
+    // Called from Kafka whenComplete callback - that runs on Kafka I/O thread,
     // outside any existing transaction, so @Transactional opens a fresh one
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void save(String topic, String eventKey, Object event, String errorMessage) {
 
         try {
