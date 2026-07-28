@@ -1,4 +1,3 @@
-# docker-compose.yml — project root
 services:
 
   # ════════════════════════════════════════════════════════════════════
@@ -97,8 +96,6 @@ services:
 
   # ════════════════════════════════════════════════════════════════════
   # EUREKA SERVER
-  # Removed misplaced EUREKA_URL env (that var belongs to CLIENT services,
-  # not the server itself)
   # ════════════════════════════════════════════════════════════════════
   eureka-server:
     build:
@@ -112,24 +109,24 @@ services:
       interval: 20s
       timeout: 10s
       retries: 5
-      start_period: 40s   # Eureka takes ~30s to fully start
+      start_period: 40s
 
   # ════════════════════════════════════════════════════════════════════
   # API-GATEWAY :8080
-  # Entry point - routes to all 4 services via Eureka service discovery
-  # depends_on conditions: waits for infra to be HEALTHY, not just started
   # ════════════════════════════════════════════════════════════════════
   api-gateway:
     build:
       context: .
       dockerfile: api-gateway/Dockerfile
     container_name: shortlyai-api-gateway
+    volumes:
+      - ./api-gateway/logs:/app/logs
     ports:
       - "8080:8080"
     env_file:
-      - .env                          # pulls JWT_SECRET, REDIS_PASSWORD etc
+      - .env
     environment:
-      REDIS_HOST: redis                # Docker DNS — resolves to redis container
+      REDIS_HOST: redis
       EUREKA_URL: http://eureka-server:8761/eureka/
     depends_on:
       redis:
@@ -145,8 +142,10 @@ services:
       context: .
       dockerfile: auth-service/Dockerfile
     container_name: shortlyai-auth-service
+    volumes:
+      - ./auth-service/logs:/app/logs
     ports:
-      - "8081:8081"
+      - "127.0.0.1:8081:8081"
     env_file:
       - .env
     environment:
@@ -170,8 +169,10 @@ services:
       context: .
       dockerfile: url-service/Dockerfile
     container_name: shortlyai-url-service
+    volumes:
+      - ./url-service/logs:/app/logs
     ports:
-      - "8082:8082"
+      - "127.0.0.1:8082:8082"
     env_file:
       - .env
     environment:
@@ -180,9 +181,6 @@ services:
       REDIS_HOST: redis
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       EUREKA_URL: http://eureka-server:8761/eureka/
-      # BASE_DOMAIN left at default (http://localhost:8082) -
-      # short URLs are clicked from the HOST browser, localhost:8082
-      # still resolves correctly via the port mapping above
     depends_on:
       postgres:
         condition: service_healthy
@@ -201,8 +199,10 @@ services:
       context: .
       dockerfile: analytics-service/Dockerfile
     container_name: shortlyai-analytics-service
+    volumes:
+      - ./analytics-service/logs:/app/logs
     ports:
-      - "8083:8083"
+      - "127.0.0.1:8083:8083"
     env_file:
       - .env
     environment:
@@ -229,20 +229,26 @@ services:
       context: .
       dockerfile: ai-service/Dockerfile
     container_name: shortlyai-ai-service
+    volumes:
+      - ./ai-service/logs:/app/logs
     ports:
-      - "8084:8084"
+      - "127.0.0.1:8084:8084"
     env_file:
-      - .env                          # GROQ_API_KEY/BASE_URL/MODEL/TEMPERATURE/MAX_TOKENS
+      - .env
     environment:
+      DB_HOST: postgres
+      DB_NAME: shortlyai_ai
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       EUREKA_URL: http://eureka-server:8761/eureka/
-      URL_SERVICE_BASE_URL: http://url-service:8082         # Docker DNS, not localhost
+      URL_SERVICE_BASE_URL: http://url-service:8082
       ANALYTICS_SERVICE_BASE_URL: http://analytics-service:8083
-      REDIS_HOST: redis        # Redis container service name
+      REDIS_HOST: redis
     depends_on:
       kafka:
         condition: service_healthy
       eureka-server:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
 
   # ════════════════════════════════════════════════════════════════════
@@ -251,10 +257,12 @@ services:
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yaml"
     ports:
       - "9090:9090"
     volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./observability/prometheus/prometheus.yaml:/etc/prometheus/prometheus.yaml
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
@@ -265,12 +273,15 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning
+      - ./observability/grafana/dashboards:/etc/grafana/provisioning/dashboards/files
       - grafana-data:/var/lib/grafana
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
     depends_on:
       - prometheus
+      - loki
+      - tempo
     restart: unless-stopped
 
   loki:
@@ -285,11 +296,41 @@ services:
     image: grafana/promtail:latest
     container_name: promtail
     volumes:
-      - ./promtail-config.yml:/etc/promtail/config.yml
-      - D:/Coding/SpringBoot/shortlyai:/app:ro
-    command: -config.file=/etc/promtail/config.yml
+      - ./observability/promtail/promtail-config.yaml:/etc/promtail/config.yaml
+      - .:/app:ro     # ← restored: without this, Promtail has nothing to read
+    command: -config.file=/etc/promtail/config.yaml
     depends_on:
       - loki
+    restart: unless-stopped
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: otel-collector
+    command: [ "--config=/etc/otel-collector-config.yaml" ]
+    volumes:
+      - ./observability/otel-collector/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+      - "8889:8889"
+    healthcheck:
+      test: [ "CMD", "wget", "--spider", "-q", "http://localhost:13133/" ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    depends_on:
+      - tempo
+    restart: unless-stopped
+
+  tempo:
+    image: grafana/tempo:latest
+    container_name: tempo
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./observability/tempo/tempo.yaml:/etc/tempo.yaml
+    ports:
+      - "3200:3200"
     restart: unless-stopped
 
 volumes:
