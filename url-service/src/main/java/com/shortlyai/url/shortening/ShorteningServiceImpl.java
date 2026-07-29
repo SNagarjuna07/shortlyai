@@ -22,9 +22,9 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.UUID;
+import java.util.concurrent.Executor;
 
 @Service
-@Transactional
 @Slf4j
 public class ShorteningServiceImpl implements ShorteningService {
 
@@ -35,6 +35,8 @@ public class ShorteningServiceImpl implements ShorteningService {
     private final KafkaTemplate<String, Object> kafkaTemplate;
 
     private final FailedEventService failedEventService;
+
+    private final Executor clickTrackingExecutor;
 
     private final String baseDomain;
 
@@ -60,12 +62,15 @@ public class ShorteningServiceImpl implements ShorteningService {
             @Value("${url.cache-ttl-seconds}") long cacheTtlSeconds,
             @Value("${spring.kafka.topics.url-created}") String urlCreatedTopic,
             @Value("${spring.kafka.topics.url-clicked}") String urlClickedTopic,
-            @Value("${spring.kafka.topics.url-deleted}") String urlDeletedTopic, FailedEventService failedEventService) {
+            @Value("${spring.kafka.topics.url-deleted}") String urlDeletedTopic,
+            FailedEventService failedEventService,
+            Executor clickTrackingExecutor) {
 
         this.urlRepository = urlRepository;
         this.stringRedisTemplate = stringRedisTemplate;
         this.kafkaTemplate = kafkaTemplate;
         this.failedEventService = failedEventService;
+        this.clickTrackingExecutor = clickTrackingExecutor;
         this.baseDomain = baseDomain;
         this.apiPrefix = apiPrefix;
         this.defaultExpiryDays = defaultExpiryDays;
@@ -75,13 +80,14 @@ public class ShorteningServiceImpl implements ShorteningService {
         this.urlDeletedTopic = urlDeletedTopic;
     }
 
-    // Used by REDIS for caching
     private static final String CACHE_PREFIX = "url:";
 
     // \u0000 (null byte)
     // URL is stored LAST so split("\u0000", 4) never cuts into it.
     // Format: "urlId\u0000userId\u0000expiresAtEpochMs\u0000originalUrl"
     private static final String CACHE_SEP = "\u0000";
+
+    private static final String PENDING_CLICKS_PREFIX = "clicks:pending:";
 
     @Override
     public ShortenResponse shorten(ShortenRequest request, UUID userId) {
@@ -126,10 +132,6 @@ public class ShorteningServiceImpl implements ShorteningService {
         Url savedUrl = urlRepository.save(url);
 
         // Generate a random (non-sequential) slug if custom slug was not provided.
-        // Never derive it from savedUrl.getId() via Base62.encode() — auto-increment
-        // IDs encoded that way are sequential and fully enumerable (id=1,2,3...),
-        // letting anyone walk the entire URL table. Retry on the (extremely rare)
-        // collision instead.
         if (!isCustom) {
 
             String generatedSlug;
@@ -180,8 +182,11 @@ public class ShorteningServiceImpl implements ShorteningService {
     }
 
     @Override
-    @Transactional
     public String resolve(String slug, HttpServletRequest request) {
+
+        String ipHash = sha256(request.getRemoteAddr());
+        String userAgent = request.getHeader("User-Agent");
+        String referer = request.getHeader("Referer");
 
         String cached = stringRedisTemplate.opsForValue()
                 .get(CACHE_PREFIX + slug);
@@ -202,7 +207,7 @@ public class ShorteningServiceImpl implements ShorteningService {
 
             } else {
 
-                log.info("Cache hit for slug: {}", slug);
+                log.debug("Cache hit for slug: {}", slug);
 
                 Long urlId = Long.parseLong(parts[0]);
 
@@ -221,17 +226,16 @@ public class ShorteningServiceImpl implements ShorteningService {
                     throw new UrlNotFoundException("URL not found");
                 }
 
-                publishClickEvent(urlId, slug, userId, request);
-
-                urlRepository.incrementClickCount(urlId);
+                // Fire-and-forget: Kafka publish + click-count UPDATE happen off this thread
+                dispatchClickTracking(urlId, slug, userId, ipHash, userAgent, referer);
 
                 return originalUrl;   // only returns here - the valid, non-stale, non-expired case
             }
         }
 
-        log.info("Cache miss for slug. Fetching from DB: {}", slug);
+        log.debug("Cache miss for slug. Fetching from DB: {}", slug);
 
-        // cache miss - also reached when the entry was stale and got evicted above
+        // cache miss
         Url shortUrl = urlRepository.findBySlugAndIsActiveTrueAndExpiresAtAfter(
                         slug,
                         Instant.now()
@@ -254,14 +258,47 @@ public class ShorteningServiceImpl implements ShorteningService {
                 Duration.ofSeconds(cacheTtlSeconds)
         );
 
-        publishClickEvent(shortUrl.getId(), slug, shortUrl.getUserId(), request);
-
-        urlRepository.incrementClickCount(shortUrl.getId());
+        dispatchClickTracking(
+                shortUrl.getId(),
+                slug,
+                shortUrl.getUserId(),
+                ipHash,
+                userAgent,
+                referer
+        );
 
         return shortUrl.getOriginalUrl();
     }
 
+    // Runs on clickTrackingExecutor (virtual-thread-per-task), never on the request thread
+    private void dispatchClickTracking(
+            Long urlId,
+            String slug,
+            UUID ownerId,
+            String ipHash,
+            String userAgent,
+            String referer
+    ) {
+
+        clickTrackingExecutor.execute(() -> {
+
+            try {
+
+                publishClickEvent(urlId, slug, ownerId, ipHash, userAgent, referer);
+
+                stringRedisTemplate.opsForValue()
+                        .increment(PENDING_CLICKS_PREFIX + urlId);
+
+            } catch (Exception e) {
+
+                log.error("Async click tracking failed for slug '{}' urlId {}: {}",
+                        slug, urlId, e.getMessage());
+            }
+        });
+    }
+
     @Override
+    @Transactional
     public void delete(Long id, UUID userId) {
 
         // fetch URL
@@ -372,11 +409,16 @@ public class ShorteningServiceImpl implements ShorteningService {
         try {
             kafkaTemplate.send(urlCreatedTopic, slug, event)
                     .whenComplete((result, ex) -> {
+
                         if (ex != null) {
+
                             log.error("Kafka publish failed: topic: {} slug: {} error: {}",
                                     urlCreatedTopic, slug, ex.getMessage());
+
                             failedEventService.save(urlCreatedTopic, slug, event, ex.getMessage());
+
                         } else {
+
                             log.debug("Published url.created: topic: {} slug: {} urlId: {} partition: {}",
                                     urlCreatedTopic, slug, urlId,
                                     result.getRecordMetadata().partition());
@@ -406,16 +448,22 @@ public class ShorteningServiceImpl implements ShorteningService {
 
             kafkaTemplate.send(urlDeletedTopic, slug, event)
                     .whenComplete((result, ex) -> {
+
                         if (ex != null) {
+
                             log.error("Kafka publish failed: topic: {} slug: {} error: {}",
                                     urlDeletedTopic, slug, ex.getMessage());
+
                             failedEventService.save(urlDeletedTopic, slug, event, ex.getMessage());
+
                         } else {
+
                             log.debug("Published url.deleted: topic: {} slug: {} urlId: {} partition: {}",
                                     urlDeletedTopic, slug, urlId,
                                     result.getRecordMetadata().partition());
                         }
                     });
+
         } catch (Exception e) {
 
             log.error("Failed to publish " + urlDeletedTopic + " event: ", e);
@@ -429,16 +477,21 @@ public class ShorteningServiceImpl implements ShorteningService {
         }
     }
 
-    private void publishClickEvent(Long urlId, String slug, UUID ownerId, HttpServletRequest request) {
-
-        String ipHash = sha256(request.getRemoteAddr());
+    private void publishClickEvent(
+            Long urlId,
+            String slug,
+            UUID ownerId,
+            String ipHash,
+            String userAgent,
+            String referer
+    ) {
 
         UrlClickedEvent event = new UrlClickedEvent(
                 urlId,
                 slug,
-                request.getHeader("User-Agent"),
+                userAgent,
                 ipHash,
-                request.getHeader("Referer"),
+                referer,
                 null, // country - not resolved at url-service layer
                 null,            // city - not resolved at url-service layer
                 Instant.now(),
@@ -449,11 +502,16 @@ public class ShorteningServiceImpl implements ShorteningService {
 
             kafkaTemplate.send(urlClickedTopic, slug, event)
                     .whenComplete((result, ex) -> {
+
                         if (ex != null) {
+
                             log.error("Kafka publish failed: topic: {} slug: {} error: {}",
                                     urlClickedTopic, slug, ex.getMessage());
+
                             failedEventService.save(urlClickedTopic, slug, event, ex.getMessage());
+
                         } else {
+
                             log.debug("Published url.clicked: topic: {} slug: {} urlId: {} partition: {}",
                                     urlClickedTopic, slug, urlId,
                                     result.getRecordMetadata().partition());
@@ -472,7 +530,6 @@ public class ShorteningServiceImpl implements ShorteningService {
             );
         }
     }
-
 
     private String sha256(String input) {
 
