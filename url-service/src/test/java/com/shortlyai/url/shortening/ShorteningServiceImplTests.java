@@ -73,7 +73,10 @@ class ShorteningServiceImplTests {
                 "url.created",
                 "url.clicks",
                 "url.deleted",
-                failedEventService
+                failedEventService,
+                Runnable::run       // same-thread executor — click tracking
+                // runs synchronously in tests, so
+                // verify() right after resolve() sees it
         );
 
         when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
@@ -205,7 +208,7 @@ class ShorteningServiceImplTests {
 
         assertThat(result).isEqualTo("https://example.com/x");
         verify(urlRepository, never()).findBySlugAndIsActiveTrueAndExpiresAtAfter(any(), any());
-        verify(urlRepository).incrementClickCount(urlId);
+        verify(valueOperations).increment("clicks:pending:" + urlId);
     }
 
     @Test
@@ -221,7 +224,7 @@ class ShorteningServiceImplTests {
                 .isInstanceOf(UrlNotFoundException.class);
 
         verify(stringRedisTemplate).delete("url:expired-slug");
-        verify(urlRepository, never()).incrementClickCount(anyLong());
+        verify(valueOperations, never()).increment(anyString());
     }
 
     @Test
@@ -254,7 +257,7 @@ class ShorteningServiceImplTests {
         String result = shorteningService.resolve("db-only", httpServletRequest);
 
         assertThat(result).isEqualTo(dbUrl.getOriginalUrl());
-        verify(urlRepository).incrementClickCount(20L);
+        verify(valueOperations).increment("clicks:pending:20");
         verify(valueOperations).set(eq("url:db-only"), anyString(), any(Duration.class));
     }
 
