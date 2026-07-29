@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
@@ -38,15 +39,15 @@ public interface UrlRepository extends JpaRepository<Url, Long> {
     """)
     int softDeleteByIdAndUserId(@Param("id") Long id, @Param("userId") UUID userId, @Param("now") Instant now);
 
-    // Increment click counter — single UPDATE, no entity load needed
-    // Avoids N+1: loading entity just to increment a number wastes a SELECT
     @Modifying
-    @Query("""
-               UPDATE Url u
-               SET u.clickCount = u.clickCount + 1
-               WHERE u.id = :urlId
-    """)
-    void incrementClickCount(@Param("urlId") Long urlId);
+    @Transactional
+    @Query(value = """
+               UPDATE urls u
+               SET click_count = u.click_count + v.cnt
+               FROM (SELECT unnest(:ids) AS id, unnest(:counts) AS cnt) v
+               WHERE u.id = v.id
+    """, nativeQuery = true)
+    void batchIncrementClickCounts(@Param("ids") Long[] ids, @Param("counts") Long[] counts);
 
     // For loading only the user's URL's. Prevents loading other user's URLs.
     Optional<Url> findByIdAndUserIdAndIsActiveTrue(Long id, UUID userId);
