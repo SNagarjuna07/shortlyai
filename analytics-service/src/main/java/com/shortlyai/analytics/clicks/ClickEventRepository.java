@@ -15,38 +15,23 @@ public interface ClickEventRepository extends JpaRepository<ClickEvent, Long> {
     // Count total clicks for a URL — fallback when Redis misses
     long countByUrlId(Long urlId);
 
-    // Count clicks in time window — used by hourly rollup job
     @Query("""
-            SELECT COUNT(c) FROM ClickEvent c
-            WHERE c.urlId = :urlId
-            AND c.clickedAt >= :from
-            AND c.clickedAt < :to
-            """)
-    long countByUrlIdAndClickedAtBetween(
-            @Param("urlId") Long urlId,
-            @Param("from") Instant from,
-            @Param("to") Instant to
-    );
-
-    // All urlIds with clicks in window — rollup job iterates these
-    @Query("""
-            SELECT DISTINCT c.urlId
+            SELECT new com.shortlyai.analytics.clicks.TopUrlResponse(c.urlId, COUNT(c))
             FROM ClickEvent c
-            WHERE c.clickedAt >= :from
-            AND c.clickedAt < :to
+            WHERE c.clickedAt >= :from AND c.clickedAt < :to
+            GROUP BY c.urlId
             """)
-    List<Long> findDistinctUrlIdsBetween(
+    List<TopUrlResponse> countGroupedByUrlIdBetween(
             @Param("from") Instant from,
             @Param("to") Instant to
     );
 
     // Bulk delete all clicks for a URL — called on url.deleted event
+    // urlId (immutable PK) not slug (reusable) — see earlier fix
     @Modifying
-    void deleteBySlug(String slug);
+    void deleteByUrlId(Long urlId);
 
     // Top N URLs by total click count — groups all click_events by urlId
-    // Pageable controls the limit e.g. PageRequest.of(0, 10) = top 10
-    // Constructor expression maps result directly to TopUrlResponse record
     @Query("""
         SELECT new com.shortlyai.analytics.clicks.TopUrlResponse(c.urlId, COUNT(c))
         FROM ClickEvent c
@@ -57,5 +42,4 @@ public interface ClickEventRepository extends JpaRepository<ClickEvent, Long> {
     List<TopUrlResponse> findTopUrlsByUserId(@Param("userId") UUID userId, Pageable pageable);
 
     boolean existsByUrlIdAndUserId(Long urlId, UUID userId);
-
 }

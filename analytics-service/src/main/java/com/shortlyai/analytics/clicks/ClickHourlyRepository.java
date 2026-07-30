@@ -10,12 +10,11 @@ import java.util.Optional;
 
 public interface ClickHourlyRepository extends JpaRepository<ClickHourly, Long> {
 
-    // Find existing rollup row — for upsert during rollup job
+    // Find existing rollup row — kept for other callers, no longer used in the hot loop
     Optional<ClickHourly> findByUrlIdAndHour(Long urlId, Instant hour);
+    List<ClickHourly> findByUrlIdInAndHour(List<Long> urlIds, Instant hour);
 
     // All hourly buckets for a URL from a point in time forward
-    // Service passes Instant.now().minus(24, HOURS) for last 24h
-    // Results ordered ascending — oldest hour first for chart rendering
     @Query("""
             SELECT c FROM ClickHourly c
             WHERE c.urlId = :urlId
