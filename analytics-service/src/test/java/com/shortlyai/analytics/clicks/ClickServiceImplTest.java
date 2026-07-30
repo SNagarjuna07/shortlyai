@@ -44,6 +44,8 @@ class ClickServiceImplTest {
 
     private ClickServiceImpl clickService;
 
+    private static final String OWNER_KEY_PREFIX = "url:owner:";
+
     private final String USER_ID = "550e8400-e29b-41d4-a716-446655440000";
 
     @BeforeEach
@@ -97,35 +99,51 @@ class ClickServiceImplTest {
     }
 
     @Test
-    void getTotalClicks_returnsFromRedis_whenCached() {
+    void processClick_nullClickedAt_fallsBackToNow_doesNotThrow() {
+
+        // event.clickedAt() is null — fingerprint building must not NPE
+        UrlClickedEvent event = new UrlClickedEvent(
+                9L, "nullts", "ua", "iphash", "ref", "IN", "Mysuru", null, UUID.randomUUID());
+
+        when(bloomFilterService.isDuplicate(anyString())).thenReturn(false);
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+
+        clickService.processClick(event);
+
+        verify(clickEventRepository).save(any(ClickEvent.class));
+        verify(bloomFilterService).markSeen(anyString());
+    }
+
+    @Test
+    void getTotalClicks_ownerCacheHit_returnsFromRedisCounter_neverTouchesDb() {
 
         UUID userId = UUID.fromString(USER_ID);
 
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
 
-        when(valueOperations.get("clicks:realtime:99")).thenReturn("17");
+        // ownership cache hit — matches caller
+        when(valueOperations.get(OWNER_KEY_PREFIX + "99")).thenReturn(USER_ID);
 
-        when(clickEventRepository.existsByUrlIdAndUserId(99L, userId))
-                .thenReturn(true);
+        // counter cache hit
+        when(valueOperations.get("clicks:realtime:99")).thenReturn("17");
 
         long total = clickService.getTotalClicks(99L, userId);
 
         assertThat(total).isEqualTo(17L);
 
+        verify(clickEventRepository, never()).existsByUrlIdAndUserId(any(), any());
         verify(clickEventRepository, never()).countByUrlId(anyLong());
     }
 
     @Test
-    void getTotalClicks_fallsBackToPostgres_whenCacheMiss() {
+    void getTotalClicks_ownerCacheHit_counterCacheMiss_fallsBackToPostgresCount() {
 
         UUID userId = UUID.fromString(USER_ID);
 
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
 
+        when(valueOperations.get(OWNER_KEY_PREFIX + "99")).thenReturn(USER_ID);
         when(valueOperations.get("clicks:realtime:99")).thenReturn(null);
-
-        when(clickEventRepository.existsByUrlIdAndUserId(99L, userId))
-                .thenReturn(true);
 
         when(clickEventRepository.countByUrlId(99L)).thenReturn(5L);
 
@@ -134,32 +152,58 @@ class ClickServiceImplTest {
         assertThat(total).isEqualTo(5L);
 
         verify(clickEventRepository).countByUrlId(99L);
+        verify(clickEventRepository, never()).existsByUrlIdAndUserId(any(), any());
     }
 
     @Test
-    void initializeCounter_setsRedisCounterIfAbsent() {
+    void getTotalClicks_ownerCacheMiss_fallsBackToClickHistoryCheck_ownerFound() {
+
+        // zero-click-URL bug fix: cache miss (e.g. pre-fix data, eviction) —
+        // must fall back to click-history check rather than auto-denying
+        UUID userId = UUID.fromString(USER_ID);
+
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+
+        when(valueOperations.get(OWNER_KEY_PREFIX + "99")).thenReturn(null);
+        when(clickEventRepository.existsByUrlIdAndUserId(99L, userId)).thenReturn(true);
+
+        when(valueOperations.get("clicks:realtime:99")).thenReturn("17");
+
+        long total = clickService.getTotalClicks(99L, userId);
+
+        assertThat(total).isEqualTo(17L);
+
+        verify(clickEventRepository).existsByUrlIdAndUserId(99L, userId);
+    }
+
+    @Test
+    void initializeCounter_setsRedisCounterIfAbsent_andCachesOwnership() {
+
+        UUID userId = UUID.randomUUID();
 
         UrlCreatedEvent event = new UrlCreatedEvent(
                 1L, "slug1", "https://example.com", "http://sly.ai/slug1",
-                UUID.randomUUID(), null, Instant.now());
+                userId, null, Instant.now());
 
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
 
         clickService.initializeCounter(event);
 
         verify(valueOperations).setIfAbsent("clicks:realtime:1", "0");
+        verify(valueOperations).set(OWNER_KEY_PREFIX + "1", userId.toString());
     }
 
     @Test
-    void deleteClickData_removesPostgresRowsAndRedisCounter() {
+    void deleteClickData_removesPostgresRowsByUrlId_andRedisCounterAndOwnerKey() {
 
         UrlDeletedEvent event = new UrlDeletedEvent(55L, "slug55", UUID.randomUUID(), Instant.now());
 
         clickService.deleteClickData(event);
 
-        verify(clickEventRepository).deleteBySlug("slug55");
+        verify(clickEventRepository).deleteByUrlId(55L);
 
         verify(redisTemplate).delete("clicks:realtime:55");
+        verify(redisTemplate).delete(OWNER_KEY_PREFIX + "55");
     }
 
     @Test
@@ -175,8 +219,8 @@ class ClickServiceImplTest {
                 new ClickHourly(10L, hour2, 8L)
         );
 
-        when(clickEventRepository.existsByUrlIdAndUserId(10L, userId))
-                .thenReturn(true);
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get(OWNER_KEY_PREFIX + "10")).thenReturn(USER_ID);
 
         when(clickHourlyRepository.findByUrlIdAndSince(
                 eq(10L),
@@ -219,17 +263,35 @@ class ClickServiceImplTest {
     }
 
     @Test
-    void getTotalClicks_urlNotOwnedByCaller_throwsAccessDenied() {
+    void getTotalClicks_ownerCacheMismatch_throwsAccessDenied_withoutTouchingDb() {
+
+        // cache hit, but caller isn't the cached owner — deny immediately, no DB fallback needed
+        UUID callerId = UUID.fromString(USER_ID);
+        UUID actualOwnerId = UUID.randomUUID();
+
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get(OWNER_KEY_PREFIX + "999")).thenReturn(actualOwnerId.toString());
+
+        assertThatThrownBy(() -> clickService.getTotalClicks(999L, callerId))
+                .isInstanceOf(AccessDeniedException.class);
+
+        verify(clickEventRepository, never()).existsByUrlIdAndUserId(any(), any());
+        verify(clickEventRepository, never()).countByUrlId(anyLong());
+    }
+
+    @Test
+    void getTotalClicks_ownerCacheMiss_andNoClickHistory_throwsAccessDenied() {
 
         Long urlId = 999L;
         UUID callerId = UUID.fromString(USER_ID);
 
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get(OWNER_KEY_PREFIX + "999")).thenReturn(null);
         when(clickEventRepository.existsByUrlIdAndUserId(urlId, callerId)).thenReturn(false);
 
         assertThatThrownBy(() -> clickService.getTotalClicks(urlId, callerId))
                 .isInstanceOf(AccessDeniedException.class);
 
-        // must never touch Redis/Postgres click data before the ownership check fails
         verify(clickEventRepository, never()).countByUrlId(anyLong());
     }
 
@@ -239,6 +301,8 @@ class ClickServiceImplTest {
         Long urlId = 999L;
         UUID callerId = UUID.fromString(USER_ID);
 
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get(OWNER_KEY_PREFIX + "999")).thenReturn(null);
         when(clickEventRepository.existsByUrlIdAndUserId(urlId, callerId)).thenReturn(false);
 
         assertThatThrownBy(() -> clickService.getHourlyBreakdown(urlId, callerId, 24))
@@ -253,8 +317,8 @@ class ClickServiceImplTest {
         Long urlId = 42L;
         UUID callerId = UUID.fromString(USER_ID);
 
-        when(clickEventRepository.existsByUrlIdAndUserId(urlId, callerId)).thenReturn(true);
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get(OWNER_KEY_PREFIX + "42")).thenReturn(USER_ID);
         when(valueOperations.get("clicks:realtime:" + urlId)).thenReturn(null);
         when(clickEventRepository.countByUrlId(urlId)).thenReturn(7L);
 

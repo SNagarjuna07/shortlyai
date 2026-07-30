@@ -3,6 +3,7 @@ package com.shortlyai.analytics.rollup;
 import com.shortlyai.analytics.clicks.ClickEventRepository;
 import com.shortlyai.analytics.clicks.ClickHourly;
 import com.shortlyai.analytics.clicks.ClickHourlyRepository;
+import com.shortlyai.analytics.clicks.TopUrlResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -14,7 +15,6 @@ import org.mockito.quality.Strictness;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
@@ -40,22 +40,21 @@ class RollupSchedulerTests {
     @Test
     void rollupPreviousHour_newUrlWithClicks_createsNewHourlyRow() {
 
-        when(clickEventRepository.findDistinctUrlIdsBetween(any(Instant.class), any(Instant.class)))
-                .thenReturn(List.of(100L));
+        when(clickEventRepository.countGroupedByUrlIdBetween(any(Instant.class), any(Instant.class)))
+                .thenReturn(List.of(new TopUrlResponse(100L, 25L)));
 
-        when(clickEventRepository.countByUrlIdAndClickedAtBetween(eq(100L), any(Instant.class), any(Instant.class)))
-                .thenReturn(25L);
-
-        when(clickHourlyRepository.findByUrlIdAndHour(eq(100L), any(Instant.class)))
-                .thenReturn(Optional.empty());
+        when(clickHourlyRepository.findByUrlIdInAndHour(eq(List.of(100L)), any(Instant.class)))
+                .thenReturn(List.of()); // no existing row
 
         rollupScheduler.rollupPreviousHour();
 
-        ArgumentCaptor<ClickHourly> captor = ArgumentCaptor.forClass(ClickHourly.class);
-        verify(clickHourlyRepository).save(captor.capture());
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<ClickHourly>> captor = ArgumentCaptor.forClass(List.class);
+        verify(clickHourlyRepository).saveAll(captor.capture());
 
-        assertThat(captor.getValue().getUrlId()).isEqualTo(100L);
-        assertThat(captor.getValue().getClickCount()).isEqualTo(25L);
+        assertThat(captor.getValue()).hasSize(1);
+        assertThat(captor.getValue().get(0).getUrlId()).isEqualTo(100L);
+        assertThat(captor.getValue().get(0).getClickCount()).isEqualTo(25L);
     }
 
     @Test
@@ -63,44 +62,59 @@ class RollupSchedulerTests {
 
         ClickHourly existing = new ClickHourly(200L, Instant.now(), 10L);
 
-        when(clickEventRepository.findDistinctUrlIdsBetween(any(Instant.class), any(Instant.class)))
-                .thenReturn(List.of(200L));
+        when(clickEventRepository.countGroupedByUrlIdBetween(any(Instant.class), any(Instant.class)))
+                .thenReturn(List.of(new TopUrlResponse(200L, 30L)));
 
-        when(clickEventRepository.countByUrlIdAndClickedAtBetween(eq(200L), any(Instant.class), any(Instant.class)))
-                .thenReturn(30L);
-
-        when(clickHourlyRepository.findByUrlIdAndHour(eq(200L), any(Instant.class)))
-                .thenReturn(Optional.of(existing));
+        when(clickHourlyRepository.findByUrlIdInAndHour(eq(List.of(200L)), any(Instant.class)))
+                .thenReturn(List.of(existing));
 
         rollupScheduler.rollupPreviousHour();
 
-        verify(clickHourlyRepository).save(existing);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<ClickHourly>> captor = ArgumentCaptor.forClass(List.class);
+        verify(clickHourlyRepository).saveAll(captor.capture());
+
+        assertThat(captor.getValue()).containsExactly(existing);
         assertThat(existing.getClickCount()).isEqualTo(30L); // overwritten, not added to
     }
 
     @Test
-    void rollupPreviousHour_zeroClicksInWindow_skipsUpsertEntirely() {
+    void rollupPreviousHour_mixOfNewAndExistingUrls_batchesBothInOneSaveAll() {
 
-        when(clickEventRepository.findDistinctUrlIdsBetween(any(Instant.class), any(Instant.class)))
-                .thenReturn(List.of(300L));
+        ClickHourly existing = new ClickHourly(1L, Instant.now(), 5L);
 
-        when(clickEventRepository.countByUrlIdAndClickedAtBetween(eq(300L), any(Instant.class), any(Instant.class)))
-                .thenReturn(0L);
+        when(clickEventRepository.countGroupedByUrlIdBetween(any(Instant.class), any(Instant.class)))
+                .thenReturn(List.of(
+                        new TopUrlResponse(1L, 15L),   // existing row, gets updated
+                        new TopUrlResponse(2L, 40L)    // new row, gets created
+                ));
+
+        when(clickHourlyRepository.findByUrlIdInAndHour(eq(List.of(1L, 2L)), any(Instant.class)))
+                .thenReturn(List.of(existing)); // only urlId=1 has a prior row
 
         rollupScheduler.rollupPreviousHour();
 
-        verify(clickHourlyRepository, never()).findByUrlIdAndHour(any(), any());
-        verify(clickHourlyRepository, never()).save(any());
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<ClickHourly>> captor = ArgumentCaptor.forClass(List.class);
+        verify(clickHourlyRepository).saveAll(captor.capture());
+
+        assertThat(captor.getValue()).hasSize(2);
+        assertThat(existing.getClickCount()).isEqualTo(15L);
+        assertThat(captor.getValue()).anySatisfy(row -> {
+            assertThat(row.getUrlId()).isEqualTo(2L);
+            assertThat(row.getClickCount()).isEqualTo(40L);
+        });
     }
 
     @Test
     void rollupPreviousHour_noUrlsWithActivity_doesNothing() {
 
-        when(clickEventRepository.findDistinctUrlIdsBetween(any(Instant.class), any(Instant.class)))
+        when(clickEventRepository.countGroupedByUrlIdBetween(any(Instant.class), any(Instant.class)))
                 .thenReturn(List.of());
 
         rollupScheduler.rollupPreviousHour();
 
-        verify(clickHourlyRepository, never()).save(any());
+        verify(clickHourlyRepository, never()).findByUrlIdInAndHour(any(), any());
+        verify(clickHourlyRepository, never()).saveAll(any());
     }
 }
