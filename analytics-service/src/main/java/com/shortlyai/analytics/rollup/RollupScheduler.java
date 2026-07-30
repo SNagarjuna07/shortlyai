@@ -3,15 +3,21 @@ package com.shortlyai.analytics.rollup;
 import com.shortlyai.analytics.clicks.ClickEventRepository;
 import com.shortlyai.analytics.clicks.ClickHourly;
 import com.shortlyai.analytics.clicks.ClickHourlyRepository;
+import com.shortlyai.analytics.clicks.TopUrlResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Component
@@ -25,37 +31,52 @@ public class RollupScheduler {
     // Aggregates the PREVIOUS hour's clicks into click_hourly table
     @Scheduled(cron = "0 5 * * * *")
     @SchedulerLock(
-            name = "analytics_hourly_rollup",   // lock name in Redis — must be unique
-            lockAtLeastFor = "4m",              // hold lock at least 4 min (prevents double-run)
-            lockAtMostFor = "9m"               // release after 9 min even if job hangs
+            name = "analytics_hourly_rollup",
+            lockAtLeastFor = "4m",
+            lockAtMostFor = "9m"
     )
     @Transactional
     public void rollupPreviousHour() {
-        // Calculate previous hour window e.g. if now=14:05, window=13:00 → 14:00
+
         Instant hourTo = Instant.now().truncatedTo(ChronoUnit.HOURS);
         Instant hourFrom = hourTo.minus(1, ChronoUnit.HOURS);
 
         log.info("Starting hourly rollup for window {} -> {}", hourFrom, hourTo);
 
-        // Get all unique urlIds that had clicks in this hour
-        List<Long> urlIds = clickEventRepository
-                .findDistinctUrlIdsBetween(hourFrom, hourTo);
+        List<TopUrlResponse> counts = clickEventRepository.countGroupedByUrlIdBetween(hourFrom, hourTo);
 
-        for (Long urlId : urlIds) {
-            long count = clickEventRepository
-                    .countByUrlIdAndClickedAtBetween(urlId, hourFrom, hourTo);
+        if (counts.isEmpty()) {
 
-            if (count == 0) continue; // nothing to rollup
+            log.info("Hourly rollup complete. No activity this window.");
 
-            // Upsert: update existing row or create new one
-            ClickHourly row = clickHourlyRepository
-                    .findByUrlIdAndHour(urlId, hourFrom)
-                    .orElse(new ClickHourly(urlId, hourFrom, 0L));
-
-            row.setClickCount(count);
-            clickHourlyRepository.save(row);
+            return;
         }
 
-        log.info("Hourly rollup complete. Processed {} URLs", urlIds.size());
+        List<Long> urlIds = counts.stream()
+                .map(TopUrlResponse::urlId)
+                .toList();
+
+
+        Map<Long, ClickHourly> existingByUrlId = clickHourlyRepository
+                .findByUrlIdInAndHour(urlIds, hourFrom)
+                .stream()
+                .collect(Collectors.toMap(ClickHourly::getUrlId, Function.identity()));
+
+        List<ClickHourly> rowsToSave = new ArrayList<>();
+
+        for (TopUrlResponse count : counts) {
+
+            ClickHourly row = existingByUrlId.getOrDefault(
+                    count.urlId(),
+                    new ClickHourly(count.urlId(), hourFrom, 0L)
+            );
+
+            row.setClickCount(count.clickCount());
+            rowsToSave.add(row);
+        }
+
+        clickHourlyRepository.saveAll(rowsToSave);
+
+        log.info("Hourly rollup complete. Processed {} URLs", counts.size());
     }
 }
