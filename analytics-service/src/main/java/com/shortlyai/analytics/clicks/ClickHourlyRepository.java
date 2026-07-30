@@ -6,12 +6,9 @@ import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.Optional;
 
 public interface ClickHourlyRepository extends JpaRepository<ClickHourly, Long> {
 
-    // Find existing rollup row — kept for other callers, no longer used in the hot loop
-    Optional<ClickHourly> findByUrlIdAndHour(Long urlId, Instant hour);
     List<ClickHourly> findByUrlIdInAndHour(List<Long> urlIds, Instant hour);
 
     // All hourly buckets for a URL from a point in time forward
