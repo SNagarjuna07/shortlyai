@@ -29,32 +29,32 @@ public class ClickServiceImpl implements ClickService {
 
     private final ClickHourlyRepository clickHourlyRepository;
 
-    // Called by Kafka consumer for every url.clicks event
+    private static final String OWNER_KEY_PREFIX = "url:owner:";
+
     @Transactional
     public void processClick(UrlClickedEvent event) {
 
-        // Build a fingerprint: urlId + ipHash + minute-bucket
-        // Deduplicates same IP clicking same URL within the same minute
+        Instant clickedAt = event.clickedAt() != null
+                ? event.clickedAt()
+                : Instant.now();
+
         String fingerprint = event.urlId() + ":" + event.ipHash() + ":"
-                + (event.clickedAt().getEpochSecond() / 60); // minute bucket
+                + (clickedAt.getEpochSecond() / 60);
 
         if (bloomFilterService.isDuplicate(fingerprint)) {
 
             log.debug("Duplicate click detected for slug: {}, skipping", event.slug());
 
-            return; // skip - already counted this click
+            return;
         }
 
-        // Save raw click event to Postgres
         ClickEvent clickEvent = ClickEvent.from(event);
         clickEventRepository.save(clickEvent);
 
-        // Mark as seen in Bloom filter
         bloomFilterService.markSeen(fingerprint);
 
-        // Increment real-time Redis counter — key: "clicks:realtime:{urlId}"
-        // Used by dashboard for live counter without hitting Postgres
         String redisKey = "clicks:realtime:" + event.urlId();
+
         redisTemplate.opsForValue().increment(redisKey);
 
         log.debug("Processed click for slug: {} urlId: {}", event.slug(), event.urlId());
@@ -63,14 +63,10 @@ public class ClickServiceImpl implements ClickService {
     @Transactional(readOnly = true)
     public long getTotalClicks(Long urlId, UUID userId) {
 
-        // Verify the caller owns the URL before reading any click data.
-        boolean owns = clickEventRepository.existsByUrlIdAndUserId(urlId, userId);
-
-        if (!owns) {
+        if (!isOwner(urlId, userId)) {
             throw new AccessDeniedException("URL not found");
         }
 
-        // Try Redis first (real-time counter)
         String redisKey = "clicks:realtime:" + urlId;
 
         String cached = redisTemplate.opsForValue().get(redisKey);
@@ -90,13 +86,14 @@ public class ClickServiceImpl implements ClickService {
         return clickEventRepository.countByUrlId(urlId);
     }
 
-    // Called on url.created — sets counter to 0 so stats endpoint works immediately
     public void initializeCounter(UrlCreatedEvent event) {
 
         String redisKey = "clicks:realtime:" + event.urlId();
-
-        // Only set if not already exists - don't overwrite real click data
         redisTemplate.opsForValue().setIfAbsent(redisKey, "0");
+
+        // ownership cache, so stats endpoints work before the first click exists
+        redisTemplate.opsForValue()
+                .set(OWNER_KEY_PREFIX + event.urlId(), event.userId().toString());
 
         log.debug("Initialized click counter for slug: {} urlId: {}", event.slug(), event.urlId());
     }
@@ -104,31 +101,24 @@ public class ClickServiceImpl implements ClickService {
     @Transactional
     public void deleteClickData(UrlDeletedEvent event) {
 
-        // Delete all raw click rows for this slug
-        clickEventRepository.deleteBySlug(event.slug());
+        clickEventRepository.deleteByUrlId(event.id());
 
-        // Delete real-time Redis counter
         redisTemplate.delete("clicks:realtime:" + event.id());
+
+        redisTemplate.delete(OWNER_KEY_PREFIX + event.id());
 
         log.info("Deleted click data for slug: {} urlId: {}", event.slug(), event.id());
     }
 
-    // Queries hourly rollup table for a URL over last N hours
-    // ClickServiceImpl.java
     @Transactional(readOnly = true)
     public List<HourlyBreakdownResponse> getHourlyBreakdown(Long urlId, UUID userId, int hours) {
 
-        boolean owns = clickEventRepository.existsByUrlIdAndUserId(urlId, userId);
-
-        if (!owns) {
+        if (!isOwner(urlId, userId)) {
             throw new AccessDeniedException("URL not found");
         }
 
         List<ClickHourly> clicks = clickHourlyRepository
-                .findByUrlIdAndSince(
-                        urlId,
-                        Instant.now().minus(hours, ChronoUnit.HOURS)
-                );
+                .findByUrlIdAndSince(urlId, Instant.now().minus(hours, ChronoUnit.HOURS));
 
         return clicks.stream()
                 .map(row ->
@@ -138,6 +128,18 @@ public class ClickServiceImpl implements ClickService {
                         )
                 )
                 .toList();
+    }
+
+    // Redis-first ownership check, DB fallback for cache misses / pre-fix rows
+    private boolean isOwner(Long urlId, UUID userId) {
+
+        String cachedOwner = redisTemplate.opsForValue().get(OWNER_KEY_PREFIX + urlId);
+
+        if (cachedOwner != null) {
+            return cachedOwner.equals(userId.toString());
+        }
+
+        return clickEventRepository.existsByUrlIdAndUserId(urlId, userId);
     }
 
     // Queries raw click_events grouped by urlId. Returns top N by click count
