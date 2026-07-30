@@ -11,14 +11,14 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 @Component
 @Slf4j
 @RequiredArgsConstructor
-
-// Deletes the URLS in Redis whose click-count is 0 (generated short-url, but never clicked)
 public class RealTimeCleanupJob {
 
     private final StringRedisTemplate stringRedisTemplate;
@@ -29,7 +29,7 @@ public class RealTimeCleanupJob {
 
         log.info("Starting zero URL click counters cleanup..");
 
-        Set<String> keysToDelete = new HashSet<>();
+        List<String> keys = new ArrayList<>();
 
         ScanOptions options = ScanOptions.scanOptions()
                 .match("clicks:realtime:*")
@@ -42,13 +42,27 @@ public class RealTimeCleanupJob {
 
             while (cursor.hasNext()) {
 
-                String key = new String(cursor.next(), StandardCharsets.UTF_8);
+                keys.add(new String(cursor.next(), StandardCharsets.UTF_8));
+            }
+        }
 
-                String val = stringRedisTemplate.opsForValue().get(key);
+        if (keys.isEmpty()) {
 
-                if ("0".equals(val)) {
-                    keysToDelete.add(key);
-                }
+            log.info("No realtime keys found");
+
+            return;
+        }
+
+        // single round trip for all values
+        List<String> values = stringRedisTemplate.opsForValue()
+                .multiGet(keys);
+
+        Set<String> keysToDelete = new HashSet<>();
+
+        for (int i = 0; i < keys.size(); i++) {
+
+            if ("0".equals(values.get(i))) {
+                keysToDelete.add(keys.get(i));
             }
         }
 
