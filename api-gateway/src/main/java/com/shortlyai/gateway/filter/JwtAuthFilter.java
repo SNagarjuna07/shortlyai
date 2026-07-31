@@ -86,9 +86,9 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
 
         String token = authHeader.substring(7);
 
-        if (!jwtUtil.isTokenValid(token) && !jwtUtil.isAccessToken(token)) {
+        if (!jwtUtil.isTokenValid(token) || !jwtUtil.isAccessToken(token)) {
 
-            log.warn("Invalid or expired JWT for path: {}", path);
+            log.warn("Invalid, expired, or non-access JWT for path: {}", path);
 
             return writeError(strippedExchange, HttpStatus.UNAUTHORIZED, "Invalid or expired token");
         }
