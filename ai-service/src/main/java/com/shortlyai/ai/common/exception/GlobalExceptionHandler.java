@@ -97,7 +97,6 @@ public class GlobalExceptionHandler {
                 ));
     }
 
-    // catch-all
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGeneric(Exception ex, HttpServletRequest request) {
 
@@ -106,7 +105,7 @@ public class GlobalExceptionHandler {
         return ResponseEntity.internalServerError()
                 .body(new ErrorResponse(
                                 HttpStatus.INTERNAL_SERVER_ERROR.value(),
-                                "An unexpected error occurred" + ex.getMessage(),
+                                "An unexpected error occurred",
                                 request.getRequestURI(),
                                 Instant.now()
                         )
