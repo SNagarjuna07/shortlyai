@@ -63,6 +63,7 @@ class JwtAuthFilterTests {
         ServerWebExchange exchange = exchangeWithHeaders("/api/v1/urls", headers);
 
         when(jwtUtil.isTokenValid(token)).thenReturn(true);
+        when(jwtUtil.isAccessToken(token)).thenReturn(true);
         when(jwtUtil.extractUserId(token)).thenReturn(userId.toString());
         when(jwtUtil.extractRole(token)).thenReturn("ROLE_FREE");
 
