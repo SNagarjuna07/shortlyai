@@ -35,20 +35,16 @@ public class DlqRetryJob {
         log.info("DLQ retry fired");
 
         int pageSize = 100;
-        int pageNumber = 0;
         int totalProcessed = 0;
-
         Page<FailedEvent> page;
 
         do {
-
+            // always page 0 - processed/maxed-out rows fall out of the WHERE
+            // clause each time, so offset 0 always holds the next unhandled batch
             page = failedEventRepository
                     .findRetryable(
                             MAX_RETRIES,
-                            PageRequest.of(
-                                    pageNumber,
-                                    pageSize
-                            )
+                            PageRequest.of(0, pageSize)
                     );
 
             if (page.isEmpty()) {
@@ -65,9 +61,7 @@ public class DlqRetryJob {
 
             totalProcessed += page.getNumberOfElements();
 
-            pageNumber++;
-
-        } while (page.hasNext());
+        } while (page.getNumberOfElements() == pageSize);
 
         if (totalProcessed > 0) {
 
@@ -84,9 +78,8 @@ public class DlqRetryJob {
         failedEventRepository.save(failedEvent);
 
         try {
+
             // Resolve correct event class from topic name.
-            // Previously deserialized to Object.class -> LinkedHashMap -> consumer
-            // Jackson deserialization failed or produced silent nulls on retry.
             Class<?> eventClass = resolveEventClass(failedEvent.getTopic());
 
             Object payload = jsonMapper.readValue(failedEvent.getPayload(), eventClass);
@@ -125,7 +118,7 @@ public class DlqRetryJob {
 
         return switch (topic) {
             case "url.created" -> UrlCreatedEvent.class;
-            case "url.clicks"  -> UrlClickedEvent.class;
+            case "url.clicks" -> UrlClickedEvent.class;
             case "url.deleted" -> UrlDeletedEvent.class;
             default -> {
                 log.warn("DLQ: unknown topic '{}', deserializing as Object - retry may fail", topic);
