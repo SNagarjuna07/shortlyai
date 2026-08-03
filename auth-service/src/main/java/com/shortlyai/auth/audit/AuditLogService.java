@@ -1,6 +1,5 @@
 package com.shortlyai.auth.audit;
 
-import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
@@ -17,35 +16,20 @@ public class AuditLogService {
 
     private final AuditLogRepository auditLogRepository;
 
-    // Single entry point, no self-invocation possible.
+    // Takes plain Strings, not HttpServletRequest
     @Async("auditExecutor")
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void log(AuditEventType eventType, UUID userId, HttpServletRequest request) {
-
-        String ip = extractIp(request);
-
-        String userAgent = request.getHeader("User-Agent");
+    public void log(AuditEventType eventType, UUID userId, String ipAddress, String userAgent) {
 
         AuditLog entry = AuditLog.builder()
                 .eventType(eventType)
                 .userId(userId)
-                .ipAddress(ip)
+                .ipAddress(ipAddress)
                 .userAgent(userAgent)
                 .build();
 
         auditLogRepository.save(entry);
 
-        log.debug("Audit logged: event= {}, userId= {}, ip= {}", eventType, userId, ip);
-    }
-
-    private String extractIp(HttpServletRequest request) {
-
-        String forwarded = request.getHeader("X-Forwarded-For");
-
-        if (forwarded != null && !forwarded.isBlank()) {
-            return forwarded.split(",")[0].trim();
-        }
-
-        return request.getRemoteAddr();
+        log.debug("Audit logged: event= {}, userId= {}, ip= {}", eventType, userId, ipAddress);
     }
 }
