@@ -2,6 +2,7 @@ package com.shortlyai.auth.oauth2;
 
 import com.shortlyai.auth.audit.AuditEventType;
 import com.shortlyai.auth.audit.AuditLogService;
+import com.shortlyai.auth.audit.RequestMetadataExtractor;
 import com.shortlyai.auth.security.JwtUtil;
 import com.shortlyai.auth.token.RefreshTokenService;
 import com.shortlyai.auth.user.Provider;
@@ -106,7 +107,12 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
         refreshTokenService.store(refreshToken, user.getId().toString());
 
         // Audit
-        auditLogService.log(AuditEventType.OAUTH2_LOGIN, user.getId(), request);
+        auditLogService.log(
+                AuditEventType.OAUTH2_LOGIN,
+                user.getId(),
+                RequestMetadataExtractor.extractIp(request),
+                RequestMetadataExtractor.extractUserAgent(request)
+        );
 
         // Step 5
         // Frontend reads tokens from URL and stores them
