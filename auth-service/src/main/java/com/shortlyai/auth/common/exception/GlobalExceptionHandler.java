@@ -12,22 +12,17 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.time.Instant;
 
-// @RestControllerAdvice — intercepts exceptions thrown by any controller
-// Single place for all error handling — no try/catch in controllers or services
 @RestControllerAdvice
 @Slf4j
 public class GlobalExceptionHandler {
 
-    // Handles @Valid failures — @NotBlank, @Email, @Size violations
-    // Spring throws this automatically when validation fails on @RequestBody
+    // Handles @Valid failures
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse> handleValidationException(
             MethodArgumentNotValidException ex,
             HttpServletRequest request
     ) {
-        // getBindingResult() — contains all field errors from @Valid
-        // getFieldErrors() — list of individual field violations
-        // stream first error only — return one message at a time, not a dump
+
         String message = ex.getBindingResult()
                 .getFieldErrors()
                 .stream()
@@ -35,31 +30,31 @@ public class GlobalExceptionHandler {
                 .map(error -> error.getField() + ": " + error.getDefaultMessage())
                 .orElse("Validation failed");
 
-        log.error("Validation error: {}", ex.getMessage(), ex);
+        log.warn("Validation error: {}", ex.getMessage());
 
         return buildResponse(HttpStatus.BAD_REQUEST, message, request);
     }
 
-    // 401 — wrong email or password
+    // 401 - wrong email or password
     @ExceptionHandler(InvalidCredentialsException.class)
     public ResponseEntity<ErrorResponse> handleInvalidCredentials(
             InvalidCredentialsException ex,
             HttpServletRequest request
     ) {
 
-        log.error("Invalid credentials: {}", ex.getMessage(), ex);
+        log.warn("Invalid credentials: {}", ex.getMessage());
 
         return buildResponse(HttpStatus.UNAUTHORIZED, ex.getMessage(), request);
     }
 
-    // 409 Conflict — email already registered
+    // 409 Conflict - email already registered
     @ExceptionHandler(EmailAlreadyExistsException.class)
     public ResponseEntity<ErrorResponse> handleEmailAlreadyExists(
             EmailAlreadyExistsException ex,
             HttpServletRequest request
     ) {
 
-        log.error("Email already exists: {}", ex.getMessage(), ex);
+        log.warn("Email already exists: {}", ex.getMessage());
 
         return buildResponse(HttpStatus.CONFLICT, ex.getMessage(), request);
     }
@@ -70,7 +65,7 @@ public class GlobalExceptionHandler {
             HttpServletRequest request
     ) {
 
-        log.error("User not verified: {}", ex.getMessage(), ex);
+        log.warn("Account not verified: {}", ex.getMessage());
 
         return buildResponse(HttpStatus.FORBIDDEN, ex.getMessage(), request);
     }
@@ -82,7 +77,7 @@ public class GlobalExceptionHandler {
             HttpServletRequest request
     ) {
 
-        log.error("Invalid JWT: {}", ex.getMessage(), ex);
+        log.error("Invalid JWT: {}", ex.getMessage());
 
         return buildResponse(HttpStatus.UNAUTHORIZED, ex.getMessage(), request);
     }
@@ -94,7 +89,7 @@ public class GlobalExceptionHandler {
             HttpServletRequest request
     ) {
 
-        log.error("User not found: {}", ex.getMessage(), ex);
+        log.warn("User not found: {}", ex.getMessage());
 
         return buildResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
     }
@@ -105,6 +100,9 @@ public class GlobalExceptionHandler {
             AccessDeniedException ex,
             HttpServletRequest request
     ) {
+
+        log.warn("Unauthorized resource access attempt: {}", ex.getMessage());
+
         return buildResponse(HttpStatus.FORBIDDEN, "Access denied", request);
     }
 
@@ -120,8 +118,7 @@ public class GlobalExceptionHandler {
         return buildResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
     }
 
-    // 500 — catch-all for anything unexpected
-    // Never expose internal details — log it, return generic message
+    // 500 - catch generic exception
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGenericException(
             Exception ex,
@@ -133,17 +130,16 @@ public class GlobalExceptionHandler {
         return buildResponse(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred", request);
     }
 
-    // DRY — single builder used by all handlers
     private ResponseEntity<ErrorResponse> buildResponse(
             HttpStatus status,
             String message,
             HttpServletRequest request
     ) {
         return ResponseEntity.status(status).body(new ErrorResponse(
-                status.value(),        // numeric code — 400, 401, 409, 500
-                message,               // human readable
-                request.getRequestURI(), // which endpoint failed
-                Instant.now()          // when it happened
+                status.value(),
+                message,
+                request.getRequestURI(),
+                Instant.now()
         ));
     }
 }
