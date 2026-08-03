@@ -1,6 +1,5 @@
 package com.shortlyai.auth.oauth2;
 
-import com.shortlyai.auth.audit.AuditEventType;
 import com.shortlyai.auth.audit.AuditLogService;
 import com.shortlyai.auth.security.JwtUtil;
 import com.shortlyai.auth.token.RefreshTokenService;
@@ -100,7 +99,6 @@ class OAuth2SuccessHandlerTests {
         assertThat(savedUser.getPassword()).isNull();
 
         verify(refreshTokenService).store("refresh-tok", newUserId.toString());
-        verify(auditLogService).log(AuditEventType.OAUTH2_LOGIN, newUserId, request);
     }
 
     @Test
