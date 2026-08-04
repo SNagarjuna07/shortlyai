@@ -2,6 +2,7 @@ package com.shortlyai.url.common.exception;
 
 import com.shortlyai.url.common.dto.ErrorResponse;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
@@ -18,16 +19,12 @@ import java.time.Instant;
 @Slf4j
 public class GlobalExceptionHandler {
 
-    // Handles @Valid failures — @NotBlank, @Email, @Size violations
-    // Spring throws this automatically when validation fails on @RequestBody
+    // Handles @Valid failures
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse> handleValidationException(
             MethodArgumentNotValidException ex,
             HttpServletRequest request
     ) {
-        // getBindingResult() — contains all field errors from @Valid
-        // getFieldErrors() — list of individual field violations
-        // stream first error only — return one message at a time, not a dump
         String message = ex.getBindingResult()
                 .getFieldErrors()
                 .stream()
@@ -35,40 +32,51 @@ public class GlobalExceptionHandler {
                 .map(error -> error.getField() + ": " + error.getDefaultMessage())
                 .orElse("Validation failed");
 
-        log.error("Validation error: {}", ex.getMessage(), ex);
+        log.warn("Validation error on {}: {}", request.getRequestURI(), message);
 
         return buildResponse(HttpStatus.BAD_REQUEST, message, request);
     }
 
-    // 404 — URL not found
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<ErrorResponse> handleConstraintViolation(
+            ConstraintViolationException ex,
+            HttpServletRequest request
+    ) {
+
+        String message = ex.getConstraintViolations()
+                .stream()
+                .findFirst()
+                .map(v -> v.getPropertyPath() + ": " + v.getMessage())
+                .orElse("Validation failed");
+
+        log.warn("Entity constraint violation on {}: {}", request.getRequestURI(), message);
+
+        return buildResponse(HttpStatus.BAD_REQUEST, message, request);
+    }
+
     @ExceptionHandler(UrlNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleInvalidUrl(
             UrlNotFoundException ex,
             HttpServletRequest request
     ) {
 
-        log.error("Invalid URL requested: {}", ex.getMessage(), ex);
+        log.warn("Invalid URL requested: {}", ex.getMessage());
 
         return buildResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
     }
 
-    // 409 Conflict — slug already taken
     @ExceptionHandler(DuplicateSlugException.class)
     public ResponseEntity<ErrorResponse> handleSlugAlreadyExists(
             DuplicateSlugException ex,
             HttpServletRequest request
     ) {
 
-        log.error("Slug already exists: {}", ex.getMessage(), ex);
+        log.warn("Slug already exists: {}", ex.getMessage());
 
         return buildResponse(HttpStatus.CONFLICT, ex.getMessage(), request);
     }
 
     // Handles path/query parameter type conversion failures
-    // GET /api/v1/urls/abc
-    // but controller expects:
-    // @PathVariable Long id
-    // Spring cannot convert "abc" -> Long
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     public ResponseEntity<ErrorResponse> handleTypeMismatch(
             MethodArgumentTypeMismatchException ex,
@@ -85,8 +93,6 @@ public class GlobalExceptionHandler {
     }
 
     // Handles database constraint violations
-    // Example:
-    // Two users attempt to create the same custom slug at the same time.
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ErrorResponse> handleDataIntegrityViolation(
             DataIntegrityViolationException ex,
@@ -102,8 +108,7 @@ public class GlobalExceptionHandler {
         );
     }
 
-    // 500 — catch-all for anything unexpected
-    // Never expose internal details — log it, return generic message
+    // 500 - catch all exceptions
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGenericException(
             Exception ex,
@@ -124,18 +129,17 @@ public class GlobalExceptionHandler {
         return buildResponse(HttpStatus.FORBIDDEN, "Access denied", request);
     }
 
-    // DRY — single builder used by all handlers
     private ResponseEntity<ErrorResponse> buildResponse(
             HttpStatus status,
             String message,
             HttpServletRequest request
     ) {
+
         return ResponseEntity.status(status).body(new ErrorResponse(
-                status.value(),        // numeric code — 400, 401, 409, 500
-                message,               // human readable
-                request.getRequestURI(), // which endpoint failed
-                Instant.now()          // when it happened
+                status.value(),
+                message,
+                request.getRequestURI(),
+                Instant.now()
         ));
     }
-
 }
