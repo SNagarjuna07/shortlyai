@@ -23,13 +23,16 @@ public class DeleteConsumer {
             containerFactory = "deletedKafkaListenerContainerFactory"
     )
     public void onUrlDeleted(
-            @Payload UrlDeletedEvent event,
-            @Header(KafkaHeaders.RECEIVED_PARTITION) int partition,
-            @Header(KafkaHeaders.OFFSET) long offset
+            @Payload
+            UrlDeletedEvent event,
+            @Header(KafkaHeaders.RECEIVED_PARTITION)
+            int partition,
+            @Header(KafkaHeaders.OFFSET)
+            long offset
     ) {
 
-        log.info("Received event: {} - slug: {} partition: {} offset: {}",
-                "${spring.kafka.topics.url-deleted}", event.slug(), partition, offset);
+        log.debug("Received url.deleted event - slug: {} partition: {} offset: {}",
+                event.slug(), partition, offset);
 
         clickService.deleteClickData(event);
     }

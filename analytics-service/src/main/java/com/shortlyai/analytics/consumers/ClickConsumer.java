@@ -27,10 +27,10 @@ public class ClickConsumer {
             @Header(KafkaHeaders.OFFSET) long offset              // position in partition
     ) {
 
-        log.debug("Received event: {} - slug= {} partition= {} offset= {}",
-                "${spring.kafka.topics.url-clicked}", event.slug(), partition, offset);
+        log.debug("Received url.clicks event - slug: {} partition: {} offset: {}",
+                event.slug(), partition, offset);
 
-        // Delegate to service — consumer stays thin (same rule as controllers)
+        // Delegate to service - consumer stays thin
         clickService.processClick(event);
     }
 }
