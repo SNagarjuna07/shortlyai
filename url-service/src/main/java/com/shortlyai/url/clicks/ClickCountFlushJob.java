@@ -75,18 +75,24 @@ public class ClickCountFlushJob {
                 continue; // another instance's flush already claimed this key
             }
 
-            String rawCount = (String) rawResult;
+            try {
 
-            long urlId = Long.parseLong(key.substring(PENDING_CLICKS_PREFIX.length()));
-            long count = Long.parseLong(rawCount);
+                long urlId = Long.parseLong(key.substring(PENDING_CLICKS_PREFIX.length()));
+                long count = Long.parseLong((String) rawResult);
 
-            ids.add(urlId);
-            counts.add(count);
+                ids.add(urlId);
+                counts.add(count);
+
+            } catch (Exception e) {
+
+                log.error("Click flush: skipping unparseable key '{}' value '{}': {}",
+                        key, rawResult, e.getMessage());
+            }
         }
 
         if (ids.isEmpty()) {
 
-            log.debug("Click flush: all pending keys were already claimed, skipping");
+            log.debug("Click flush: all pending keys were already claimed or unparseable, skipping");
 
             return;
         }
