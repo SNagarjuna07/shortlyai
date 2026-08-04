@@ -15,9 +15,6 @@ import java.io.IOException;
 import java.util.List;
 import java.util.UUID;
 
-// OncePerRequestFilter guarantees this runs exactly once per HTTP request
-// Spring's filter chain can call filters multiple times in some dispatch scenarios
-// — this base class prevents that
 @Component
 @Slf4j
 public class HeaderAuthFilter extends OncePerRequestFilter {
@@ -42,15 +39,14 @@ public class HeaderAuthFilter extends OncePerRequestFilter {
         // Read the userId injected by the gateway after JWT validation
         String userId = request.getHeader(USER_ID_HEADER);
 
-        // Null check gates everything — public endpoints won't have this header
+        // Null check gates everything - public endpoints won't have this header
         if (userId != null && SecurityContextHolder.getContext().getAuthentication() == null) {
 
             try {
-                // Parse String -> UUID — service layer expects UUID
+
+                // Parse String -> UUID
                 UUID parsedUserId = UUID.fromString(userId);
 
-                // Standard Spring Security way to represent an authenticated user
-                // Principal = UUID userId, credentials = null, role = USER
                 UsernamePasswordAuthenticationToken auth =
                         new UsernamePasswordAuthenticationToken(
                                 parsedUserId,
@@ -58,23 +54,26 @@ public class HeaderAuthFilter extends OncePerRequestFilter {
                                 List.of(new SimpleGrantedAuthority("ROLE_USER"))
                         );
 
-                // Store in SecurityContext — .authenticated() check reads this
-                SecurityContextHolder.getContext().setAuthentication(auth);
+                // Store in SecurityContext - .authenticated() check reads this
+                SecurityContextHolder
+                        .getContext()
+                        .setAuthentication(auth);
 
-                log.debug("Authenticated userId={}", parsedUserId);
+                log.debug("Authenticated userId: {}", parsedUserId);
 
-            } catch (IllegalArgumentException e) {
-                // Header present but not a valid Long — gateway bug or tampering
-                // No auth set — request hits .authenticated() and gets 403
+            } catch (IllegalArgumentException _) {
+
+                // Header present but not a valid UUID
                 log.warn("Invalid X-User-Id header value: {}", userId);
             }
 
         } else if (userId == null) {
+
             // Normal for public endpoints
-            log.warn("No X-User-Id header on request: {}", request.getRequestURI());
+            log.debug("No X-User-Id header on request: {}", request.getRequestURI());
         }
 
-        // Always continue — filter sets context only, never blocks directly
+        // Always continue - filter sets context only, never blocks directly
         filterChain.doFilter(request, response);
     }
 }
