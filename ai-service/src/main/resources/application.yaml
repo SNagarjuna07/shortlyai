@@ -43,12 +43,22 @@ spring:
         version: 1.0.0
         protocol: STREAMABLE
         type: sync
+        annotation-scanner:
+          enabled: true
         capabilities:
           completion: true
           prompt: true
           resource: true
           tool: true
         request-timeout: 50s
+        instructions: |
+          ShortlyAI URL management server, scoped to the authenticated user only.
+          Tools mutate/query URL and analytics state (shorten-url, get-url-details,
+          get-url-stats, get-top-urls, delete-url). Resources (shortly://urls,
+          shortly://url/{slug}, shortly://analytics/top-urls) expose read-only
+          ambient context without a tool call - prefer resources over tools when
+          you just need to look something up, not act on it. Prompts (analyze-url,
+          performance-summary) pre-fill real user data into a ready-to-reason prompt.
 
   # Redis - MCP API key validation (McpKeyFilter reads mcp:key:{hash} → userId)
   data:
@@ -63,12 +73,18 @@ spring:
     listener:
       observation-enabled: true
 
+    topics:
+      url-created: ${URL_CREATED_EVENT:url.created}
+      url-classified: ${URL_CLASSIFIED_EVENT:url.classified}
+
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
 
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JacksonJsonSerializer
       properties:
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 5
         max.block.ms: 3000          # fail fast if Kafka unreachable (default 60s blocks HTTP)
         retries: 3
         retry.backoff.ms: 1000
@@ -330,18 +346,13 @@ resilience4j:
           maxAttempts: 2
           waitDuration: 500ms
           retryExceptions:
-            - org.springframework.ai.retry.TransientAiException      # provider says: 429 rate limited, 503 overloaded, 500
             - java.util.concurrent.TimeoutException
-          ignoreExceptions:
-            - org.springframework.ai.retry.NonTransientAiException   # provider says: 400 bad request, 401 auth, 404 model not found
+
       classification:
           maxAttempts: 2
           waitDuration: 500ms
           retryExceptions:
-            - org.springframework.ai.retry.TransientAiException
             - java.util.concurrent.TimeoutException
-          ignoreExceptions:
-            - org.springframework.ai.retry.NonTransientAiException
 
 springdoc:
   swagger-ui:
