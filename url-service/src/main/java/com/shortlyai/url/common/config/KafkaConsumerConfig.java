@@ -6,17 +6,21 @@ import org.apache.kafka.common.serialization.StringDeserializer;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.dao.TransientDataAccessException;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
+import org.springframework.kafka.support.serializer.DeserializationException;
+import org.springframework.kafka.support.serializer.ErrorHandlingDeserializer;
 import org.springframework.kafka.support.serializer.JacksonJsonDeserializer;
 import org.springframework.util.backoff.FixedBackOff;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.TimeoutException;
 
 @Configuration
 public class KafkaConsumerConfig {
@@ -37,7 +41,7 @@ public class KafkaConsumerConfig {
         Map<String, Object> props = new HashMap<>();
 
         props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-        props.put(ConsumerConfig.GROUP_ID_CONFIG, "url-service-group"); // new consumer group, url-service's own
+        props.put(ConsumerConfig.GROUP_ID_CONFIG, "url-service-group");
         props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
 
@@ -48,7 +52,11 @@ public class KafkaConsumerConfig {
 
         deser.setUseTypeHeaders(false); // ai-service producer has add.type.headers: false
 
-        return new DefaultKafkaConsumerFactory<>(props, new StringDeserializer(), deser);
+        return new DefaultKafkaConsumerFactory<>(
+                props,
+                new StringDeserializer(),
+                new ErrorHandlingDeserializer<>(deser)
+        );
     }
 
     @Bean
@@ -65,11 +73,21 @@ public class KafkaConsumerConfig {
         DefaultErrorHandler errorHandler =
                 new DefaultErrorHandler(
                         recoverer,
-                        new FixedBackOff(
-                                1000L,
-                                3L
-                        )
+                        new FixedBackOff(1000L, 3L)
                 );
+
+        // Poison pills go straight to the DLT on attempt 1
+        errorHandler.addNotRetryableExceptions(
+                DeserializationException.class,
+                NullPointerException.class,
+                IllegalArgumentException.class
+        );
+
+        // Transient - DB hiccup on the updateClassification() write - worth the retry
+        errorHandler.addRetryableExceptions(
+                TimeoutException.class,
+                TransientDataAccessException.class
+        );
 
         factory.setCommonErrorHandler(errorHandler);
 

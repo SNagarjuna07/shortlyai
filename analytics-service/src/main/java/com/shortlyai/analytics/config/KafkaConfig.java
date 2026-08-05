@@ -9,15 +9,19 @@ import org.apache.kafka.common.serialization.StringDeserializer;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.dao.TransientDataAccessException;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
 import org.springframework.kafka.listener.DefaultErrorHandler;
+import org.springframework.kafka.support.serializer.DeserializationException;
+import org.springframework.kafka.support.serializer.ErrorHandlingDeserializer;
 import org.springframework.kafka.support.serializer.JacksonJsonDeserializer;
 import org.springframework.util.backoff.FixedBackOff;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.TimeoutException;
 
 @Configuration
 @Slf4j
@@ -54,10 +58,14 @@ public class KafkaConfig {
         deser.addTrustedPackages("com.shortlyai.*");
         deser.setUseTypeHeaders(false);
 
-        return new DefaultKafkaConsumerFactory<>(baseProps(), new StringDeserializer(), deser);
+        return new DefaultKafkaConsumerFactory<>(
+                baseProps(),
+                new StringDeserializer(),
+                new ErrorHandlingDeserializer<>(deser)
+        );
     }
 
-    // Default factory name — picked up automatically by ClickConsumer
+    // Default factory name - picked up automatically by ClickConsumer
     @Bean
     public ConcurrentKafkaListenerContainerFactory<String, UrlClickedEvent>
     kafkaListenerContainerFactory() {
@@ -81,10 +89,14 @@ public class KafkaConfig {
         deser.addTrustedPackages("com.shortlyai.*");
         deser.setUseTypeHeaders(false);
 
-        return new DefaultKafkaConsumerFactory<>(baseProps(), new StringDeserializer(), deser);
+        return new DefaultKafkaConsumerFactory<>(
+                baseProps(),
+                new StringDeserializer(),
+                new ErrorHandlingDeserializer<>(deser)
+        );
     }
 
-    // Named — referenced explicitly in DeleteConsumer's containerFactory
+    // Named - referenced explicitly in DeleteConsumer's containerFactory
     @Bean
     public ConcurrentKafkaListenerContainerFactory<String, UrlDeletedEvent>
     deletedKafkaListenerContainerFactory() {
@@ -108,7 +120,11 @@ public class KafkaConfig {
         deser.addTrustedPackages("com.shortlyai.*");
         deser.setUseTypeHeaders(false);
 
-        return new DefaultKafkaConsumerFactory<>(baseProps(), new StringDeserializer(), deser);
+        return new DefaultKafkaConsumerFactory<>(
+                baseProps(),
+                new StringDeserializer(),
+                new ErrorHandlingDeserializer<>(deser)
+        );
     }
 
     @Bean
@@ -126,12 +142,26 @@ public class KafkaConfig {
 
     @Bean
     public DefaultErrorHandler analyticsErrorHandler() {
-        // 3 retries, 1s apart
-        return new DefaultErrorHandler(
-                (record, exception) ->
+
+        // 3 retries, 1s apart - but only for exceptions actually worth retrying
+        DefaultErrorHandler handler = new DefaultErrorHandler(
+                (rec, exception) ->
                         log.error("Giving up on record after retries: topic={} key={} error={}",
-                                record.topic(), record.key(), exception.getMessage()),
+                                rec.topic(), rec.key(), exception.getMessage()),
                 new FixedBackOff(1000L, 3L)
         );
+
+        handler.addNotRetryableExceptions(
+                DeserializationException.class,
+                NullPointerException.class,
+                IllegalArgumentException.class
+        );
+
+        handler.addRetryableExceptions(
+                TimeoutException.class,
+                TransientDataAccessException.class
+        );
+
+        return handler;
     }
 }

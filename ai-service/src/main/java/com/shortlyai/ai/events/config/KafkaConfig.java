@@ -3,19 +3,24 @@ package com.shortlyai.ai.events.config;
 import com.shortlyai.ai.events.dto.UrlCreatedEvent;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.common.serialization.StringDeserializer;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.kafka.autoconfigure.KafkaProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.dao.TransientDataAccessException;
 import org.springframework.kafka.annotation.EnableKafka;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.config.TopicBuilder;
 import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
 import org.springframework.kafka.listener.DefaultErrorHandler;
+import org.springframework.kafka.support.serializer.DeserializationException;
 import org.springframework.kafka.support.serializer.JacksonJsonDeserializer;
 import org.springframework.util.backoff.FixedBackOff;
+
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.TimeoutException;
 
 @EnableKafka
 @Configuration
@@ -33,10 +38,27 @@ public class KafkaConfig {
         return new DefaultKafkaConsumerFactory<>(props, new StringDeserializer(), deserializer);
     }
 
-    // poison-pill handling: retry 3x (1s apart) on failure, then log + skip — never blocks consumer forever
+    // poison-pill handling: retry 3x (1s apart) ONLY for exceptions worth retrying
     @Bean
     public DefaultErrorHandler errorHandler() {
-        return new DefaultErrorHandler(new FixedBackOff(1000L, 3));
+
+        DefaultErrorHandler handler =
+                new DefaultErrorHandler(new FixedBackOff(1000L, 3));
+
+        // Poison pills - retrying can never fix these
+        handler.addNotRetryableExceptions(
+                DeserializationException.class,
+                NullPointerException.class,
+                IllegalArgumentException.class
+        );
+
+        // Transient - Groq API blip, DB hiccup
+        handler.addRetryableExceptions(
+                TimeoutException.class,
+                TransientDataAccessException.class
+        );
+
+        return handler;
     }
 
     // name MUST be "kafkaListenerContainerFactory" - default factory, auto-wires
@@ -44,19 +66,23 @@ public class KafkaConfig {
     @Bean
     public ConcurrentKafkaListenerContainerFactory<String, UrlCreatedEvent> kafkaListenerContainerFactory(
             ConsumerFactory<String, UrlCreatedEvent> urlCreatedConsumerFactory,
-            DefaultErrorHandler errorHandler) {
+            DefaultErrorHandler errorHandler
+    ) {
 
         ConcurrentKafkaListenerContainerFactory<String, UrlCreatedEvent> factory =
                 new ConcurrentKafkaListenerContainerFactory<>();
+
         factory.setConsumerFactory(urlCreatedConsumerFactory);
         factory.setCommonErrorHandler(errorHandler);
+
         return factory;
     }
 
     // ensures url.classified topic exists even if broker auto-create is off
     @Bean
-    public NewTopic urlClassifiedTopic() {
-        return TopicBuilder.name("url.classified")
+    public NewTopic urlClassifiedTopic(@Value("${spring.kafka.topics.url-classified}") String topic) {
+
+        return TopicBuilder.name(topic)
                 .partitions(3)
                 .replicas(1)
                 .build();
