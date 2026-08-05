@@ -51,11 +51,13 @@ spring:
       value-serializer: org.springframework.kafka.support.serializer.JacksonJsonSerializer
       acks: all
       properties:
-        spring.json.add.type.headers: false # wait for all replicas — no data loss
+        spring.json.add.type.headers: false # wait for all replicas - no data loss
         max.block.ms: 3000  # fail fast in 3s instead of blocking 60s
         reconnect.backoff.ms: 1000      # wait 1s before reconnect attempt
         reconnect.backoff.max.ms: 10000 # max 10s between reconnect attempts
         retry.backoff.ms: 1000      # wait 1s between retries
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 5
       retries: 3
     topics:
       url-created: ${URL_CREATED_EVENT:url.created}
@@ -63,11 +65,10 @@ spring:
       url-deleted: ${URL_DELETED_EVENT:url.deleted}
       url-classified: ${URL_CLASSIFIED_EVENT:url.classified}
 
-
 server:
   port: 8082
 
-# JWT — validate token forwarded by gateway
+# JWT - validate token forwarded by gateway
 jwt:
   secret: ${JWT_SECRET:dev-secret-key-change-in-prod-must-be-256-bits}
 
