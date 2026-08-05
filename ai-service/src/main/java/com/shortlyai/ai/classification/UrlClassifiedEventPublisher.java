@@ -1,25 +1,33 @@
 package com.shortlyai.ai.classification;
 
 import com.shortlyai.ai.events.dto.UrlClassifiedEvent;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 
 @Component
 @Slf4j
-@RequiredArgsConstructor
 public class UrlClassifiedEventPublisher {
 
-    private static final String TOPIC = "url.classified";
+    private final String topic;
 
     private final KafkaTemplate<String, UrlClassifiedEvent> kafkaTemplate;
+
+    public UrlClassifiedEventPublisher(
+            @Value("${spring.kafka.topics.url-classified}")
+            String topic,
+            KafkaTemplate<String, UrlClassifiedEvent> kafkaTemplate
+    ) {
+        this.topic = topic;
+        this.kafkaTemplate = kafkaTemplate;
+    }
 
     public void publish(UrlClassifiedEvent event) {
 
         try {
-            
-            kafkaTemplate.send(TOPIC, String.valueOf(event.urlId()), event)
+
+            kafkaTemplate.send(topic, String.valueOf(event.urlId()), event)
 
                     .whenComplete((result, ex) -> {
 
@@ -29,7 +37,7 @@ public class UrlClassifiedEventPublisher {
 
                         } else {
 
-                            log.info("Published url.classified urlId={}, category={}",
+                            log.info("Published url.classified urlId= {}, category= {}",
                                     event.urlId(), event.category());
                         }
                     });
@@ -37,7 +45,7 @@ public class UrlClassifiedEventPublisher {
         } catch (Exception ex) {
 
             // catches SYNCHRONOUS failures (serialization, broker unreachable at send-call time)
-            log.error("Synchronous failure publishing url.classified urlId={}", event.urlId(), ex);
+            log.error("Synchronous failure publishing url.classified urlId= {}", event.urlId(), ex);
         }
     }
 }

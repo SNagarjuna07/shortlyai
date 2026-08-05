@@ -19,7 +19,7 @@ public class UrlCreatedEventListener {
     private final UrlClassifiedEventPublisher publisher;
 
     // no containerFactory specified -> uses default "kafkaListenerContainerFactory"
-    @KafkaListener(topics = "url.created")
+    @KafkaListener(topics = "${spring.kafka.topics.url-created}")
     public void onUrlCreated(UrlCreatedEvent event) {
 
         log.info("Received url.created event urlId: {}, originalUrl: {}",
