@@ -34,7 +34,7 @@ public class FailedEventService {
 
             failedEventRepository.save(failed);
 
-           log.warn("Saved failed event to DLQ: topic= {} key= {}", topic, eventKey);
+            log.warn("Saved failed event to DLQ: topic= {} key= {}", topic, eventKey);
 
         } catch (JacksonException e) {
 
@@ -43,5 +43,36 @@ public class FailedEventService {
             log.error("Failed to serialize event for DLQ: topic= {} key= {} error= {}",
                     topic, eventKey, e.getMessage());
         }
+    }
+
+    // Runs INSIDE the caller's existing @Transactional method (e.g. shorten()),
+    // so this row commits atomically with the business write. If crashes, then this delivers the event
+    @Transactional(propagation = Propagation.MANDATORY)
+    public Long recordPending(String topic, String eventKey, Object event) {
+
+        try {
+
+            String payload = jsonMapper.writeValueAsString(event);
+
+            FailedEvent pending = FailedEvent.builder()
+                    .topic(topic)
+                    .eventKey(eventKey)
+                    .payload(payload)
+                    .errorMessage("PENDING_INITIAL_PUBLISH")
+                    .build();
+
+            return failedEventRepository.save(pending).getId();
+
+        } catch (JacksonException e) {
+            // Can't serialize the DTO. Fail loud instead of silently losing the event.
+            throw new IllegalStateException("Could not serialize event for outbox: topic= " + topic, e);
+        }
+    }
+
+    // Called from the post-commit Kafka callback, same reasoning as save() above:
+    // own transaction since there's no ambient one on that thread.
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void markProcessed(Long outboxId) {
+        failedEventRepository.markProcessed(outboxId);
     }
 }
