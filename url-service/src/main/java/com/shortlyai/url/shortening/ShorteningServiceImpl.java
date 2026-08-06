@@ -4,17 +4,12 @@ import com.shortlyai.url.common.dto.ShortenRequest;
 import com.shortlyai.url.common.dto.ShortenResponse;
 import com.shortlyai.url.common.exception.DuplicateSlugException;
 import com.shortlyai.url.common.exception.UrlNotFoundException;
-import com.shortlyai.url.dlq.FailedEventService;
-import com.shortlyai.url.events.UrlClickedEvent;
-import com.shortlyai.url.events.UrlCreatedEvent;
-import com.shortlyai.url.events.UrlDeletedEvent;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,9 +27,7 @@ public class ShorteningServiceImpl implements ShorteningService {
 
     private final StringRedisTemplate stringRedisTemplate;
 
-    private final KafkaTemplate<String, Object> kafkaTemplate;
-
-    private final FailedEventService failedEventService;
+    private final UrlEventPublisher urlEventPublisher;
 
     private final Executor clickTrackingExecutor;
 
@@ -46,38 +39,24 @@ public class ShorteningServiceImpl implements ShorteningService {
 
     private final long cacheTtlSeconds;
 
-    private final String urlCreatedTopic;
-
-    private final String urlClickedTopic;
-
-    private final String urlDeletedTopic;
-
     public ShorteningServiceImpl(
             UrlRepository urlRepository,
             StringRedisTemplate stringRedisTemplate,
-            KafkaTemplate<String, Object> kafkaTemplate,
+            UrlEventPublisher urlEventPublisher,
             @Value("${url.base-domain}") String baseDomain,
             @Value("${api.prefix}") String apiPrefix,
             @Value("${url.default-expiry-days}") long defaultExpiryDays,
             @Value("${url.cache-ttl-seconds}") long cacheTtlSeconds,
-            @Value("${spring.kafka.topics.url-created}") String urlCreatedTopic,
-            @Value("${spring.kafka.topics.url-clicked}") String urlClickedTopic,
-            @Value("${spring.kafka.topics.url-deleted}") String urlDeletedTopic,
-            FailedEventService failedEventService,
             Executor clickTrackingExecutor) {
 
         this.urlRepository = urlRepository;
         this.stringRedisTemplate = stringRedisTemplate;
-        this.kafkaTemplate = kafkaTemplate;
-        this.failedEventService = failedEventService;
+        this.urlEventPublisher = urlEventPublisher;
         this.clickTrackingExecutor = clickTrackingExecutor;
         this.baseDomain = baseDomain;
         this.apiPrefix = apiPrefix;
         this.defaultExpiryDays = defaultExpiryDays;
         this.cacheTtlSeconds = cacheTtlSeconds;
-        this.urlCreatedTopic = urlCreatedTopic;
-        this.urlClickedTopic = urlClickedTopic;
-        this.urlDeletedTopic = urlDeletedTopic;
     }
 
     private static final String CACHE_PREFIX = "url:";
@@ -90,58 +69,50 @@ public class ShorteningServiceImpl implements ShorteningService {
     private static final String PENDING_CLICKS_PREFIX = "clicks:pending:";
 
     @Override
+    @Transactional
     public ShortenResponse shorten(ShortenRequest request, UUID userId) {
 
         log.info("URL shortening request for userId: {}", userId);
 
-        // Check whether user requested a custom slug
         boolean isCustom =
                 request.customSlug() != null &&
                         !request.customSlug().isBlank();
 
-        // Ensure custom slug is unique
         if (isCustom && urlRepository.existsBySlug(request.customSlug())) {
             throw new DuplicateSlugException("This slug is already taken");
         }
 
-        // Determine slug (custom or temporary)
         String slug = isCustom
                 ? request.customSlug()
-                : "tmp" + UUID.randomUUID()
-                .toString()
-                .replace("-", "")
-                .substring(0, 16);
+                : "tmp" + UUID.randomUUID().toString().replace("-", "").substring(0, 16);
 
-        // Build URL entity
         Url url = Url.builder()
                 .originalUrl(request.originalUrl())
                 .userId(userId)
                 .isCustom(isCustom)
-                .expiresAt(
-                        Instant.now().plus(
-                                request.expiryDays() == null
-                                        ? defaultExpiryDays
-                                        : request.expiryDays(),
-                                ChronoUnit.DAYS
-                        )
+                .expiresAt(Instant.now().plus(
+                        request.expiryDays() == null ? defaultExpiryDays : request.expiryDays(),
+                        ChronoUnit.DAYS)
                 )
                 .slug(slug)
                 .build();
 
-        // First save to generate database ID
         Url savedUrl = urlRepository.save(url);
 
-        // Generate a random (non-sequential) slug if custom slug was not provided.
         if (!isCustom) {
 
             String generatedSlug;
+
             int attempts = 0;
 
             do {
+
                 generatedSlug = Base62.generateRandomSlug();
+
                 attempts++;
 
                 if (attempts > 5) {
+
                     throw new IllegalStateException(
                             "Failed to generate unique slug after " + attempts + " attempts");
                 }
@@ -154,29 +125,17 @@ public class ShorteningServiceImpl implements ShorteningService {
         }
 
         long expiresAtMs = savedUrl.getExpiresAt() == null
-                ? Long.MAX_VALUE
-                : savedUrl.getExpiresAt().toEpochMilli();
+                ? Long.MAX_VALUE : savedUrl.getExpiresAt().toEpochMilli();
 
         stringRedisTemplate.opsForValue().set(
                 CACHE_PREFIX + savedUrl.getSlug(),
-                savedUrl.getId() +
-                        CACHE_SEP +
-                        savedUrl.getUserId() +
-                        CACHE_SEP +
-                        expiresAtMs +
-                        CACHE_SEP +
-                        savedUrl.getOriginalUrl(),
-                Duration.ofSeconds(cacheTtlSeconds)
-        );
+                savedUrl.getId() + CACHE_SEP + savedUrl.getUserId() + CACHE_SEP
+                        + expiresAtMs + CACHE_SEP + savedUrl.getOriginalUrl(),
+                Duration.ofSeconds(cacheTtlSeconds));
 
-        // Publish Kafka event
-        publishCreatedEvent(savedUrl);
+        urlEventPublisher.publishCreated(savedUrl);
 
-        log.info(
-                "Created short-url '{}' for userId: {}",
-                savedUrl.getSlug(),
-                userId
-        );
+        log.info("Created short-url '{}' for userId: {}", savedUrl.getSlug(), userId);
 
         return mapToResponse(savedUrl);
     }
@@ -284,7 +243,7 @@ public class ShorteningServiceImpl implements ShorteningService {
 
             try {
 
-                publishClickEvent(urlId, slug, ownerId, ipHash, userAgent, referer);
+                urlEventPublisher.publishClick(urlId, slug, ownerId, ipHash, userAgent, referer);
 
                 stringRedisTemplate.opsForValue()
                         .increment(PENDING_CLICKS_PREFIX + urlId);
@@ -318,8 +277,7 @@ public class ShorteningServiceImpl implements ShorteningService {
         // cache evict
         stringRedisTemplate.delete(CACHE_PREFIX + url.getSlug());
 
-        // publish Kafka - async
-        publishDeletedEvent(url);
+        urlEventPublisher.publishDeleted(url);
     }
 
     @Override
@@ -352,6 +310,7 @@ public class ShorteningServiceImpl implements ShorteningService {
         return mapToResponse(url);
     }
 
+    @Override
     @Transactional
     public void deleteUrl(String slug, UUID userId) {
 
@@ -369,12 +328,9 @@ public class ShorteningServiceImpl implements ShorteningService {
         }
 
         // evict Redis cache
-        String cacheKey = CACHE_PREFIX + slug;
+        stringRedisTemplate.delete(CACHE_PREFIX + slug);
 
-        stringRedisTemplate.delete(cacheKey);
-
-        // publish url.deleted event (Kafka)
-        publishDeletedEvent(url);
+        urlEventPublisher.publishDeleted(url);
 
         log.info("Soft-deleted URL slug: {} urlId: {} userId: {}", slug, url.getId(), userId);
     }
@@ -392,143 +348,6 @@ public class ShorteningServiceImpl implements ShorteningService {
                 u.getExpiresAt(),
                 u.getCreatedAt()
         );
-    }
-
-    private void publishCreatedEvent(Url savedUrl) {
-
-        String slug = savedUrl.getSlug();
-        Long urlId = savedUrl.getId();
-
-        // Build event once - reuse in both send and DLQ save (if needed)
-        UrlCreatedEvent event = new UrlCreatedEvent(
-                urlId, slug, savedUrl.getOriginalUrl(),
-                baseDomain + "/" + slug, savedUrl.getUserId(),
-                savedUrl.getExpiresAt(), savedUrl.getCreatedAt()
-        );
-
-        try {
-            kafkaTemplate.send(urlCreatedTopic, slug, event)
-                    .whenComplete((result, ex) -> {
-
-                        if (ex != null) {
-
-                            log.error("Kafka publish failed: topic: {} slug: {} error: {}",
-                                    urlCreatedTopic, slug, ex.getMessage());
-
-                            failedEventService.save(urlCreatedTopic, slug, event, ex.getMessage());
-
-                        } else {
-
-                            log.debug("Published url.created: topic: {} slug: {} urlId: {} partition: {}",
-                                    urlCreatedTopic, slug, urlId,
-                                    result.getRecordMetadata().partition());
-                        }
-                    });
-        } catch (Exception ex) {
-
-            log.error("Kafka send failed immediately", ex);
-
-            failedEventService.save(
-                    urlCreatedTopic,
-                    slug,
-                    event,
-                    ex.getMessage()
-            );
-        }
-    }
-
-    private void publishDeletedEvent(Url url) {
-
-        String slug = url.getSlug();
-        Long urlId = url.getId();
-
-        UrlDeletedEvent event = new UrlDeletedEvent(urlId, slug, url.getUserId(), Instant.now());
-
-        try {
-
-            kafkaTemplate.send(urlDeletedTopic, slug, event)
-                    .whenComplete((result, ex) -> {
-
-                        if (ex != null) {
-
-                            log.error("Kafka publish failed: topic: {} slug: {} error: {}",
-                                    urlDeletedTopic, slug, ex.getMessage());
-
-                            failedEventService.save(urlDeletedTopic, slug, event, ex.getMessage());
-
-                        } else {
-
-                            log.debug("Published url.deleted: topic: {} slug: {} urlId: {} partition: {}",
-                                    urlDeletedTopic, slug, urlId,
-                                    result.getRecordMetadata().partition());
-                        }
-                    });
-
-        } catch (Exception e) {
-
-            log.error("Failed to publish " + urlDeletedTopic + " event: ", e);
-
-            failedEventService.save(
-                    urlDeletedTopic,
-                    slug,
-                    event,
-                    e.getMessage()
-            );
-        }
-    }
-
-    private void publishClickEvent(
-            Long urlId,
-            String slug,
-            UUID ownerId,
-            String ipHash,
-            String userAgent,
-            String referer
-    ) {
-
-        UrlClickedEvent event = new UrlClickedEvent(
-                urlId,
-                slug,
-                userAgent,
-                ipHash,
-                referer,
-                null, // country - not resolved at url-service layer
-                null,            // city - not resolved at url-service layer
-                Instant.now(),
-                ownerId
-        );
-
-        try {
-
-            kafkaTemplate.send(urlClickedTopic, slug, event)
-                    .whenComplete((result, ex) -> {
-
-                        if (ex != null) {
-
-                            log.error("Kafka publish failed: topic: {} slug: {} error: {}",
-                                    urlClickedTopic, slug, ex.getMessage());
-
-                            failedEventService.save(urlClickedTopic, slug, event, ex.getMessage());
-
-                        } else {
-
-                            log.debug("Published url.clicked: topic: {} slug: {} urlId: {} partition: {}",
-                                    urlClickedTopic, slug, urlId,
-                                    result.getRecordMetadata().partition());
-                        }
-                    });
-
-        } catch (Exception e) {
-
-            log.error("Failed to publish " + urlClickedTopic + " event: ", e);
-
-            failedEventService.save(
-                    urlClickedTopic,
-                    slug,
-                    event,
-                    e.getMessage()
-            );
-        }
     }
 
     private String sha256(String input) {
