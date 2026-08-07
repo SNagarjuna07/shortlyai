@@ -9,6 +9,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -24,6 +26,7 @@ import java.util.UUID;
 public class ApiKeyService {
 
     private final ApiKeyRepository apiKeyRepository;
+
     private final StringRedisTemplate redis;
 
     // Redis key prefix - namespaced to avoid collision with refresh: or url: keys
@@ -66,15 +69,24 @@ public class ApiKeyService {
 
         ApiKey saved = apiKeyRepository.save(entity);
 
-        // Cache in Redis: hash -> userId
-        // No TTL - keys are permanent until revoked
-        // MCP filter reads this on every request, Redis lookup is ~0.1ms
-        redis
-                .opsForValue()
-                .set(
+        // Redis write deferred to afterCommit(). Previously this ran
+        // inline inside the open transaction - if the commit later failed
+        // (constraint violation flushed at commit, connection drop), Redis
+        // would have a live hash->userId mapping for an ApiKey row that was
+        // never actually persisted
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+
+            @Override
+            public void afterCommit() {
+
+                redis.opsForValue().set(
                         REDIS_MCP_KEY_PREFIX + hash,
                         userId.toString()
                 );
+
+                log.debug("Cached API key hash for userId: {}, keyId: {}", userId, saved.getId());
+            }
+        });
 
         log.info("API key generated for userId: {}, keyId: {}, name: {}", userId, saved.getId(), request.name());
 
@@ -97,8 +109,7 @@ public class ApiKeyService {
         ApiKey key = apiKeyRepository.findByIdAndUserId(keyId, userId)
                 .orElseThrow(() -> new ApiKeyNotFoundException("API key not found"));
 
-        // Delete from Redis first - immediately invalidates the key for MCP calls
-        // If DB delete fails after this, key is already dead (safe failure direction)
+
         redis.delete(REDIS_MCP_KEY_PREFIX + key.getKeyHash());
 
         apiKeyRepository.delete(key);
