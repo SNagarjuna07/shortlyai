@@ -8,13 +8,15 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Instant;
 import java.util.List;
@@ -39,7 +41,6 @@ class ApiKeyServiceTest {
     @Mock
     ValueOperations<String, String> valueOps;
 
-    @InjectMocks
     ApiKeyService apiKeyService;
 
     private static final UUID USER_ID = UUID.randomUUID();
@@ -48,45 +49,86 @@ class ApiKeyServiceTest {
 
     @BeforeEach
     void setUp() {
+        apiKeyService = new ApiKeyService(apiKeyRepository, stringRedisTemplate);
         when(stringRedisTemplate.opsForValue()).thenReturn(valueOps);
     }
 
+    // Helper - runs generate() with TransactionSynchronizationManager mocked,
+    // captures the registered sync, and fires afterCommit() to simulate the
+    // transaction actually committing. Returns the response so callers can
+    // still assert on it.
+    private ApiKeyResponse generateAndCommit(ApiKeyGenerateRequest request) {
+
+        ArgumentCaptor<TransactionSynchronization> syncCaptor =
+                ArgumentCaptor.forClass(TransactionSynchronization.class);
+
+        ApiKeyResponse response;
+
+        try (MockedStatic<TransactionSynchronizationManager> tsm =
+                     mockStatic(TransactionSynchronizationManager.class)) {
+
+            response = apiKeyService.generate(USER_ID, request);
+
+            tsm.verify(() -> TransactionSynchronizationManager.registerSynchronization(syncCaptor.capture()));
+        }
+
+        syncCaptor.getValue().afterCommit();
+
+        return response;
+    }
+
     @Test
-    void generate_persistsEntityAndCachesInRedis() {
+    void generate_doesNotWriteToRedis_beforeCommit() {
 
         ApiKeyGenerateRequest request = new ApiKeyGenerateRequest("My Cursor Key");
 
         ApiKey savedKey = ApiKey.builder()
-                .id(UUID.randomUUID())
-                .userId(USER_ID)
-                .keyPrefix("ab12cd34")
-                .keyHash("fakehash")
-                .name("My Cursor Key")
-                .createdAt(Instant.now())
-                .build();
+                .id(UUID.randomUUID()).userId(USER_ID)
+                .keyPrefix("ab12cd34").keyHash("fakehash").name("My Cursor Key")
+                .createdAt(Instant.now()).build();
 
         when(apiKeyRepository.save(any(ApiKey.class))).thenReturn(savedKey);
 
-        ApiKeyResponse response = apiKeyService.generate(USER_ID, request);
+        // fix under test: the Redis write must be deferred, not synchronous -
+        // no commit simulated here on purpose
+        try (MockedStatic<TransactionSynchronizationManager> tsm =
+                     mockStatic(TransactionSynchronizationManager.class)) {
+
+            apiKeyService.generate(USER_ID, request);
+
+            tsm.verify(() -> TransactionSynchronizationManager.registerSynchronization(any()));
+        }
+
+        verify(valueOps, never()).set(anyString(), anyString());
+    }
+
+    @Test
+    void generate_persistsEntityAndCachesInRedis_onlyAfterCommit() {
+
+        ApiKeyGenerateRequest request = new ApiKeyGenerateRequest("My Cursor Key");
+
+        ApiKey savedKey = ApiKey.builder()
+                .id(UUID.randomUUID()).userId(USER_ID)
+                .keyPrefix("ab12cd34").keyHash("fakehash").name("My Cursor Key")
+                .createdAt(Instant.now()).build();
+
+        when(apiKeyRepository.save(any(ApiKey.class))).thenReturn(savedKey);
+
+        ApiKeyResponse response = generateAndCommit(request);
 
         // rawKey must be returned exactly once and start with "sk_"
         assertThat(response.rawKey()).startsWith("sk_");
-
         assertThat(response.name()).isEqualTo("My Cursor Key");
-
         assertThat(response.id()).isEqualTo(savedKey.getId());
 
-        // DB save called
         verify(apiKeyRepository).save(any(ApiKey.class));
 
-        // Redis set called with hash-based key (not raw key)
+        // Redis set called with hash-based key (not raw key) - only after the
+        // simulated commit fired
         ArgumentCaptor<String> redisKeyCaptor = ArgumentCaptor.forClass(String.class);
-
         verify(valueOps).set(redisKeyCaptor.capture(), eq(USER_ID.toString()));
 
         assertThat(redisKeyCaptor.getValue()).startsWith(KEY_PREFIX);
-
-        // key must not contain the raw key itself — only the hash
         assertThat(redisKeyCaptor.getValue()).doesNotContain("sk_");
     }
 
@@ -103,9 +145,8 @@ class ApiKeyServiceTest {
 
         when(apiKeyRepository.save(any())).thenReturn(key1).thenReturn(key2);
 
-        ApiKeyResponse r1 = apiKeyService.generate(USER_ID, request);
-
-        ApiKeyResponse r2 = apiKeyService.generate(USER_ID, request);
+        ApiKeyResponse r1 = generateAndCommit(request);
+        ApiKeyResponse r2 = generateAndCommit(request);
 
         // SecureRandom ensures uniqueness
         assertThat(r1.rawKey()).isNotEqualTo(r2.rawKey());
@@ -121,21 +162,46 @@ class ApiKeyServiceTest {
 
         when(apiKeyRepository.save(any(ApiKey.class))).thenReturn(savedKey);
 
-        ApiKeyResponse response = apiKeyService.generate(USER_ID, request);
+        generateAndCommit(request);
 
         ArgumentCaptor<ApiKey> entityCaptor = ArgumentCaptor.forClass(ApiKey.class);
-
         verify(apiKeyRepository).save(entityCaptor.capture());
 
         ApiKey entity = entityCaptor.getValue();
 
         // hash must be 64-char hex (SHA-256)
         assertThat(entity.getKeyHash()).hasSize(64);
-
         assertThat(entity.getKeyHash()).matches("[a-f0-9]+");
 
         // raw key must NOT be stored
         assertThat(entity.getKeyHash()).doesNotContain("sk_");
+    }
+
+    @Test
+    void generate_crashAfterCommitBeforeCallbackFires_leavesRedisUncached_failsClosed() {
+
+        // Simulates the residual risk this fix leaves on purpose: DB row
+        // exists, afterCommit() never got to run. Key is unusable via
+        // McpKeyFilter until the callback would have fired - i.e. it fails
+        // closed, not open. This is the acceptable-tradeoff case documented
+        // on the fix - just asserting it explicitly here so it's not lost.
+        ApiKeyGenerateRequest request = new ApiKeyGenerateRequest("Key");
+
+        ApiKey savedKey = ApiKey.builder().id(UUID.randomUUID()).userId(USER_ID)
+                .keyPrefix("aaaa1111").keyHash("hash1").name("Key").createdAt(Instant.now()).build();
+
+        when(apiKeyRepository.save(any())).thenReturn(savedKey);
+
+        try (MockedStatic<TransactionSynchronizationManager> tsm =
+                     mockStatic(TransactionSynchronizationManager.class)) {
+
+            apiKeyService.generate(USER_ID, request);
+            tsm.verify(() -> TransactionSynchronizationManager.registerSynchronization(any()));
+        }
+
+        // afterCommit() deliberately never invoked here
+        verify(apiKeyRepository).save(any(ApiKey.class));
+        verify(valueOps, never()).set(anyString(), anyString());
     }
 
     @Test
@@ -152,7 +218,6 @@ class ApiKeyServiceTest {
         List<ApiKeyMetadataResponse> result = apiKeyService.list(USER_ID);
 
         assertThat(result).hasSize(2);
-
         assertThat(result).extracting(ApiKeyMetadataResponse::name)
                 .containsExactlyInAnyOrder("Key 1", "Key 2");
         // rawKey must NOT appear in metadata response (no rawKey field in record)
@@ -178,10 +243,9 @@ class ApiKeyServiceTest {
 
         apiKeyService.revoke(USER_ID, keyId);
 
-        // Redis deleted first (invalidates key immediately)
+        // unchanged by the fix - revoke() correctly deletes Redis before DB
+        // (fail-secure direction), no afterCommit() needed here
         verify(stringRedisTemplate).delete(KEY_PREFIX + "thehash");
-
-        // DB deleted after
         verify(apiKeyRepository).delete(key);
     }
 
@@ -195,9 +259,7 @@ class ApiKeyServiceTest {
         assertThatThrownBy(() -> apiKeyService.revoke(USER_ID, keyId))
                 .isInstanceOf(ApiKeyNotFoundException.class);
 
-        // Neither Redis nor DB should be touched
         verify(stringRedisTemplate, never()).delete(anyString());
-
         verify(apiKeyRepository, never()).delete(any());
     }
 }
