@@ -2,7 +2,6 @@ package com.shortlyai.gateway.ratelimit;
 
 import com.shortlyai.gateway.dto.ErrorResponse;
 import lombok.extern.slf4j.Slf4j;
-import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
@@ -17,18 +16,17 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 import tools.jackson.databind.json.JsonMapper;
+
 import java.time.Instant;
 
-// Custom GlobalFilter — replaces RequestRateLimiter default-filter in yaml
-// Gives us: per-service rate configs + proper 429 JSON body
-// Order 1: runs AFTER JwtAuthFilter (-1), so X-User-Id is already injected
+// Custom GlobalFilter - replaces RequestRateLimiter default-filter in yaml
 @Slf4j
 @Component
 public class RateLimitFilter implements GlobalFilter, Ordered {
 
-    private final RedisRateLimiter redisRateLimiter; // bean from RateLimitConfig
+    private final RedisRateLimiter redisRateLimiter;
 
-    private final KeyResolver userKeyResolver;        // @Primary bean from RateLimitConfig
+    private final KeyResolver userKeyResolver;
 
     private final JsonMapper jsonMapper;
 
@@ -65,8 +63,8 @@ public class RateLimitFilter implements GlobalFilter, Ordered {
 
                     // CRITICAL: prefix routeId to userKey
                     // Without this: auth and url share same bucket for same user
-                    // With this: "auth:user:uuid" ≠ "url:user:uuid" → separate buckets
-                    String bucketKey = routeId + ":" + userKey;  // "auth:user:uuid", "url:user:uuid" — now actually separate
+                    // With this: "auth:user:uuid" ≠ "url:user:uuid" - separate buckets
+                    String bucketKey = routeId + ":" + userKey;  // "auth:user:uuid", "url:user:uuid"
 
                     log.debug("Rate check for route: {}, bucket: {}", routeId, bucketKey);
 
@@ -78,7 +76,6 @@ public class RateLimitFilter implements GlobalFilter, Ordered {
                 .flatMap(response -> {
 
                     // Forward all rate limit metadata headers to client response
-                    // RedisRateLimiter populates these automatically — we just attach them
                     response.getHeaders().forEach((headerName, headerValue) ->
                             exchange.getResponse().getHeaders().set(headerName, headerValue)
                     );
@@ -107,12 +104,17 @@ public class RateLimitFilter implements GlobalFilter, Ordered {
     // routeId must match keys in rate-limit.routes yaml (and in the bean's config map)
     private String resolveRouteId(String path) {
 
-        if (path.startsWith(apiPrefix + "/auth"))       return "auth";       // strict - brute force target
-        if (path.startsWith(apiPrefix + "/urls"))       return "url";        // moderate
-        if (path.startsWith(apiPrefix + "/analytics"))  return "analytics";  // lenient - read-heavy
-        if (path.startsWith(apiPrefix + "/ai"))         return "ai";         // very strict - expensive ops
-        if (path.startsWith("/r/"))                     return "url";        // redirect = same bucket as url-service
-        if (path.equals("/mcp") || path.startsWith("/mcp/"))                   return "mcp";
+        if (path.startsWith(apiPrefix + "/auth")) return "auth";
+
+        if (path.startsWith(apiPrefix + "/urls")) return "url";
+
+        if (path.startsWith(apiPrefix + "/analytics")) return "analytics";
+
+        if (path.startsWith(apiPrefix + "/ai")) return "ai";
+
+        if (path.startsWith("/r/") || path.startsWith(apiPrefix + "/r")) return "url";
+
+        if (path.equals("/mcp") || path.startsWith("/mcp/")) return "mcp";
 
         return "default"; // catch-all - uses constructor fallback config
     }
