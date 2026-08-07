@@ -10,8 +10,9 @@ import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
+import java.util.Optional;
 
-//validate + extract only, no token generation
+// Validate + extract only, no token generation
 @Slf4j
 @Component
 public class JwtUtil {
@@ -57,6 +58,31 @@ public class JwtUtil {
 
     public boolean isAccessToken(String token) {
         return "access".equals(extractAllClaims(token).get("type", String.class));
+    }
+
+    // Parses + verifies the signature ONCE and checks token type in the same pass
+    public Optional<Claims> validateAccessToken(String token) {
+
+        try {
+
+            Claims claims = extractAllClaims(token);
+
+            if (!"access".equals(claims.get("type", String.class))) {
+                return Optional.empty();
+            }
+
+            return Optional.of(claims);
+
+        } catch (JwtException e) {
+
+            log.warn("Invalid JWT: {}", e.getMessage());
+            return Optional.empty();
+
+        } catch (IllegalArgumentException e) {
+
+            log.warn("JWT null or blank: {}", e.getMessage());
+            return Optional.empty();
+        }
     }
 
     private Claims extractAllClaims(String token) {
