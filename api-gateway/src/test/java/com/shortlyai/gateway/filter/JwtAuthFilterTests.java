@@ -1,14 +1,17 @@
 package com.shortlyai.gateway.filter;
 
 import com.shortlyai.gateway.security.JwtUtil;
+import io.jsonwebtoken.Claims;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
 import org.springframework.mock.web.server.MockServerWebExchange;
@@ -17,9 +20,11 @@ import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -40,6 +45,7 @@ class JwtAuthFilterTests {
 
     @BeforeEach
     void setUp() {
+
         jwtAuthFilter = new JwtAuthFilter(jwtUtil, jsonMapper, "/api/v1");
         when(chain.filter(any())).thenReturn(Mono.empty());
     }
@@ -58,18 +64,42 @@ class JwtAuthFilterTests {
         UUID userId = UUID.randomUUID();
         String token = "valid.jwt.token";
 
-        org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
-        headers.set("Authorization", "Bearer " + token);
-        ServerWebExchange exchange = exchangeWithHeaders("/api/v1/urls", headers);
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(token);
 
-        when(jwtUtil.isTokenValid(token)).thenReturn(true);
-        when(jwtUtil.isAccessToken(token)).thenReturn(true);
-        when(jwtUtil.extractUserId(token)).thenReturn(userId.toString());
-        when(jwtUtil.extractRole(token)).thenReturn("ROLE_FREE");
+        ServerWebExchange exchange =
+                exchangeWithHeaders("/api/v1/urls", headers);
 
-        StepVerifier.create(jwtAuthFilter.filter(exchange, chain)).verifyComplete();
+        Claims claims = mock(Claims.class);
 
-        verify(chain).filter(any());
+        when(jwtUtil.validateAccessToken(token))
+                .thenReturn(Optional.of(claims));
+
+        when(claims.getSubject())
+                .thenReturn(userId.toString());
+
+        when(claims.get("role", String.class))
+                .thenReturn("ROLE_FREE");
+
+        StepVerifier.create(jwtAuthFilter.filter(exchange, chain))
+                .verifyComplete();
+
+        ArgumentCaptor<ServerWebExchange> captor =
+                ArgumentCaptor.forClass(ServerWebExchange.class);
+
+        verify(chain).filter(captor.capture());
+
+        ServerWebExchange forwarded = captor.getValue();
+
+        assertEquals(
+                userId.toString(),
+                forwarded.getRequest().getHeaders().getFirst("X-User-Id")
+        );
+
+        assertEquals(
+                "ROLE_FREE",
+                forwarded.getRequest().getHeaders().getFirst("X-User-Role")
+        );
     }
 
     @Test
