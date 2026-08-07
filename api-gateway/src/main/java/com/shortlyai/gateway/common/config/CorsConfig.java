@@ -1,5 +1,6 @@
 package com.shortlyai.gateway.common.config;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.cors.CorsConfiguration;
@@ -9,20 +10,18 @@ import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
 import java.util.List;
 
 // Reactive CORS - CorsWebFilter (WebFlux) not CorsConfiguration (Servlet)
-// Applied ONCE at gateway - no need to configure CORS in downstream services
 @Configuration
 public class CorsConfig {
 
     @Bean
-    public CorsWebFilter corsWebFilter() {
+    public CorsWebFilter corsWebFilter(
+            @Value("${cors.allowed-origins}")
+            List<String> allowedOrigins
+    ) {
 
         CorsConfiguration config = new CorsConfiguration();
 
-        // Allowed origins
-        config.setAllowedOrigins(List.of(
-                "http://localhost:3000",  // React dev server
-                "http://localhost:5173"   // Vite dev server
-        ));
+        config.setAllowedOrigins(allowedOrigins);
 
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
 
