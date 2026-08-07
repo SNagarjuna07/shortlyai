@@ -15,10 +15,12 @@ import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
+import io.jsonwebtoken.Claims;
 import reactor.core.publisher.Mono;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.time.Instant;
+import java.util.Optional;
 
 @Slf4j
 @Component
@@ -86,15 +88,18 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
 
         String token = authHeader.substring(7);
 
-        if (!jwtUtil.isTokenValid(token) || !jwtUtil.isAccessToken(token)) {
+        Optional<Claims> validClaims = jwtUtil.validateAccessToken(token);
+
+        if (validClaims.isEmpty()) {
 
             log.warn("Invalid, expired, or non-access JWT for path: {}", path);
 
             return writeError(strippedExchange, HttpStatus.UNAUTHORIZED, "Invalid or expired token");
         }
 
-        String userId = jwtUtil.extractUserId(token);
-        String role = jwtUtil.extractRole(token);
+        Claims claims = validClaims.get();
+        String userId = claims.getSubject();
+        String role = claims.get("role", String.class);
 
         ServerHttpRequest mutatedRequest = strippedExchange
                 .getRequest()
