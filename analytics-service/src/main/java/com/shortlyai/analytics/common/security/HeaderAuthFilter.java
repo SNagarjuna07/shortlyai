@@ -1,15 +1,19 @@
 package com.shortlyai.analytics.common.security;
 
+import com.shortlyai.analytics.common.exception.ErrorResponse;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
 import java.util.List;
@@ -17,7 +21,10 @@ import java.util.UUID;
 
 @Component
 @Slf4j
+@RequiredArgsConstructor
 public class HeaderAuthFilter extends OncePerRequestFilter {
+
+    private final JsonMapper jsonMapper;
 
     @Override
     protected void doFilterInternal(
@@ -44,17 +51,9 @@ public class HeaderAuthFilter extends OncePerRequestFilter {
         // check if userId is missing
         if (userId == null || userId.isBlank()) {
 
-            response.setStatus(401);
-
-            response.setCharacterEncoding("UTF-8");
-
-            response.setContentType("application/json");
-
-            response.getWriter().write(""" 
-                    {"error":"Missing X-User-Id header"}
-                    """);
-
             log.warn("Missing X-User-Id on: {}", request.getRequestURI());
+
+            writeUnauthorized(response, request, "Missing X-User-Id header");
 
             return;
         }
@@ -72,7 +71,7 @@ public class HeaderAuthFilter extends OncePerRequestFilter {
                             List.of(new SimpleGrantedAuthority("ROLE_USER"))
                     );
 
-            // Store in SecurityContext — .authenticated() check reads this
+            // Store in SecurityContext - .authenticated() check reads this
             SecurityContextHolder.getContext().setAuthentication(auth);
 
             log.debug("Authenticated userId: {}", parsedUserId);
@@ -84,19 +83,30 @@ public class HeaderAuthFilter extends OncePerRequestFilter {
 
             log.warn("Invalid X-User-Id format on {}: {}", request.getRequestURI(), userId);
 
-            response.setStatus(401);
-
-            response.setContentType("application/json");
-
-            response.setCharacterEncoding("UTF-8");
-
-            response.getWriter().write("""
-                    {"error":"Invalid X-User-Id header"}
-                    """);
+            writeUnauthorized(response, request, "Invalid X-User-Id header");
 
         } finally {
 
             SecurityContextHolder.clearContext();
         }
+    }
+
+    private void writeUnauthorized(
+            HttpServletResponse response,
+            HttpServletRequest request,
+            String message
+    ) throws IOException {
+
+        response.setStatus(401);
+        response.setContentType("application/json");
+        response.setCharacterEncoding("UTF-8");
+
+        ErrorResponse error = new ErrorResponse(
+                HttpStatus.FORBIDDEN.value(),
+                message,
+                request.getRequestURI()
+        );
+
+        response.getWriter().write(jsonMapper.writeValueAsString(error));
     }
 }
