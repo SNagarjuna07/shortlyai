@@ -1,16 +1,19 @@
 package com.shortlyai.analytics.common.security;
 
+import com.shortlyai.analytics.common.exception.ErrorResponse;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.security.core.context.SecurityContextHolder;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
@@ -32,12 +35,16 @@ class HeaderAuthFilterTests {
     @Mock
     FilterChain filterChain;
 
+    @Mock
+    JsonMapper jsonMapper;
+
+    @InjectMocks
     HeaderAuthFilter filter;
 
     @BeforeEach
     void setUp() throws Exception {
 
-        filter = new HeaderAuthFilter();
+        filter = new HeaderAuthFilter(jsonMapper);
         SecurityContextHolder.clearContext();
 
         StringWriter sw = new StringWriter();
@@ -71,9 +78,16 @@ class HeaderAuthFilterTests {
         when(request.getRequestURI()).thenReturn("/api/v1/analytics/1");
         when(request.getHeader("X-User-Id")).thenReturn(null);
 
+        when(jsonMapper.writeValueAsString(any(ErrorResponse.class)))
+                .thenReturn("""
+                {"message":"Missing X-User-Id header"}
+                """);
+
         filter.doFilterInternal(request, response, filterChain);
 
         verify(response).setStatus(401);
+        verify(response).setContentType("application/json");
+        verify(response).setCharacterEncoding("UTF-8");
         verify(filterChain, never()).doFilter(any(), any());
     }
 
@@ -83,9 +97,16 @@ class HeaderAuthFilterTests {
         when(request.getRequestURI()).thenReturn("/api/v1/analytics/1");
         when(request.getHeader("X-User-Id")).thenReturn("   ");
 
+        when(jsonMapper.writeValueAsString(any(ErrorResponse.class)))
+                .thenReturn("""
+                {"message":"Missing X-User-Id header"}
+                """);
+
         filter.doFilterInternal(request, response, filterChain);
 
         verify(response).setStatus(401);
+        verify(response).setContentType("application/json");
+        verify(response).setCharacterEncoding("UTF-8");
         verify(filterChain, never()).doFilter(any(), any());
     }
 
@@ -95,9 +116,16 @@ class HeaderAuthFilterTests {
         when(request.getRequestURI()).thenReturn("/api/v1/analytics/1");
         when(request.getHeader("X-User-Id")).thenReturn("not-a-uuid");
 
+        when(jsonMapper.writeValueAsString(any(ErrorResponse.class)))
+                .thenReturn("""
+                {"message":"Invalid X-User-Id header"}
+                """);
+
         filter.doFilterInternal(request, response, filterChain);
 
         verify(response).setStatus(401);
+        verify(response).setContentType("application/json");
+        verify(response).setCharacterEncoding("UTF-8");
         verify(filterChain, never()).doFilter(any(), any());
     }
 
