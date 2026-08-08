@@ -30,12 +30,13 @@ public class KafkaConfig {
     private final String bootstrapServers;
 
     public KafkaConfig(
-            @Value("${spring.kafka.bootstrap-servers}") String bootstrapServers
+            @Value("${spring.kafka.bootstrap-servers}")
+            String bootstrapServers
     ) {
         this.bootstrapServers = bootstrapServers;
     }
 
-    // Shared base props — both factories use these
+    // Shared base props - both factories use these
     private Map<String, Object> baseProps() {
 
         Map<String, Object> props = new HashMap<>();
@@ -58,6 +59,8 @@ public class KafkaConfig {
         deser.addTrustedPackages("com.shortlyai.*");
         deser.setUseTypeHeaders(false);
 
+        // Wrapped so raw deserialization failures surface as DeserializationException
+        // required for addNotRetryableExceptions below to actually catch poison-pill messages
         return new DefaultKafkaConsumerFactory<>(
                 baseProps(),
                 new StringDeserializer(),
@@ -146,7 +149,7 @@ public class KafkaConfig {
         // 3 retries, 1s apart - but only for exceptions actually worth retrying
         DefaultErrorHandler handler = new DefaultErrorHandler(
                 (rec, exception) ->
-                        log.error("Giving up on record after retries: topic={} key={} error={}",
+                        log.error("Giving up on record after retries: topic= {} key= {} error= {}",
                                 rec.topic(), rec.key(), exception.getMessage()),
                 new FixedBackOff(1000L, 3L)
         );

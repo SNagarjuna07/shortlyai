@@ -15,6 +15,7 @@ import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.kafka.support.serializer.DeserializationException;
+import org.springframework.kafka.support.serializer.ErrorHandlingDeserializer;
 import org.springframework.kafka.support.serializer.JacksonJsonDeserializer;
 import org.springframework.util.backoff.FixedBackOff;
 
@@ -35,7 +36,11 @@ public class KafkaConfig {
         deserializer.setUseTypeHeaders(false); // producer sends no type headers - trust target type
         deserializer.addTrustedPackages("com.shortlyai.*");
 
-        return new DefaultKafkaConsumerFactory<>(props, new StringDeserializer(), deserializer);
+        return new DefaultKafkaConsumerFactory<>(
+                props,
+                new StringDeserializer(),
+                new ErrorHandlingDeserializer<>(deserializer)
+        );
     }
 
     // poison-pill handling: retry 3x (1s apart) ONLY for exceptions worth retrying
@@ -66,8 +71,7 @@ public class KafkaConfig {
     @Bean
     public ConcurrentKafkaListenerContainerFactory<String, UrlCreatedEvent> kafkaListenerContainerFactory(
             ConsumerFactory<String, UrlCreatedEvent> urlCreatedConsumerFactory,
-            DefaultErrorHandler errorHandler
-    ) {
+            DefaultErrorHandler errorHandler) {
 
         ConcurrentKafkaListenerContainerFactory<String, UrlCreatedEvent> factory =
                 new ConcurrentKafkaListenerContainerFactory<>();
