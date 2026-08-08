@@ -103,6 +103,8 @@ public class ClickServiceImpl implements ClickService {
 
         clickEventRepository.deleteByUrlId(event.id());
 
+        clickHourlyRepository.deleteByUrlId(event.id());
+
         redisTemplate.delete("clicks:realtime:" + event.id());
 
         redisTemplate.delete(OWNER_KEY_PREFIX + event.id());
