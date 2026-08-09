@@ -5,6 +5,8 @@ import com.shortlyai.ai.operations.AnalyticsOperationsService;
 import com.shortlyai.ai.operations.ResilientAnalyticsOps;
 import com.shortlyai.ai.operations.ResilientUrlOps;
 import com.shortlyai.ai.operations.UrlOperationsService;
+import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
+import io.modelcontextprotocol.spec.McpSchema.TextContent;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -18,8 +20,10 @@ import org.springframework.web.client.HttpClientErrorException;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -48,8 +52,32 @@ class McpAnalyticsToolsTests {
         McpUserContext.clear();
     }
 
+    private static String text(CallToolResult result) {
+
+        return result.content().stream()
+                .filter(c -> c instanceof TextContent)
+                .map(c -> ((TextContent) c).text())
+                .collect(Collectors.joining());
+    }
+
+    private static boolean isError(CallToolResult result) {
+        return Boolean.TRUE.equals(result.isError());
+    }
+
     @Test
-    void getUrlStats_success_returnsFormattedMessage() {
+    void getUrlStats_noAuthenticatedUser_returnsInternalErrorResult() {
+
+        McpUserContext.clear();
+
+        CallToolResult result = mcpAnalyticsTools.getUrlStats("abc123");
+
+        assertThat(isError(result)).isTrue();
+        assertThat(text(result)).contains("Internal error");
+        verifyNoInteractions(resilientUrlOps, resilientAnalyticsOps);
+    }
+
+    @Test
+    void getUrlStats_success_returnsFormattedMessageAndStructuredContent() {
 
         UrlOperationsService.UrlDetails details =
                 new UrlOperationsService.UrlDetails(1L, "abc123", "https://example.com", "http://short.ly/abc123", 0L);
@@ -62,9 +90,12 @@ class McpAnalyticsToolsTests {
                         new AnalyticsOperationsService.StatsResult(1L, 42L, "ok")
                 ));
 
-        String result = mcpAnalyticsTools.getUrlStats("abc123");
+        CallToolResult result = mcpAnalyticsTools.getUrlStats("abc123");
 
-        assertThat(result).contains("abc123").contains("42");
+        assertThat(isError(result)).isFalse();
+        assertThat(text(result)).contains("abc123").contains("42");
+        assertThat(result.structuredContent())
+                .isEqualTo(new McpAnalyticsTools.UrlStatsPayload("abc123", 42L));
     }
 
     @Test
@@ -73,9 +104,10 @@ class McpAnalyticsToolsTests {
         when(resilientUrlOps.getDetails("missing", USER_ID))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
-        String result = mcpAnalyticsTools.getUrlStats("missing");
+        CallToolResult result = mcpAnalyticsTools.getUrlStats("missing");
 
-        assertThat(result).contains("Could not find");
+        assertThat(isError(result)).isTrue();
+        assertThat(text(result)).contains("Could not find");
     }
 
     @Test
@@ -90,9 +122,10 @@ class McpAnalyticsToolsTests {
         when(resilientAnalyticsOps.getStats(1L, USER_ID))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
-        String result = mcpAnalyticsTools.getUrlStats("abc123");
+        CallToolResult result = mcpAnalyticsTools.getUrlStats("abc123");
 
-        assertThat(result).contains("temporarily unavailable");
+        assertThat(isError(result)).isTrue();
+        assertThat(text(result)).contains("temporarily unavailable");
     }
 
     @Test
@@ -106,9 +139,21 @@ class McpAnalyticsToolsTests {
         when(resilientUrlOps.getDetails("abc123", USER_ID))
                 .thenThrow(new CompletionException(httpEx));
 
-        String result = mcpAnalyticsTools.getUrlStats("abc123");
+        CallToolResult result = mcpAnalyticsTools.getUrlStats("abc123");
 
-        assertThat(result).contains("Could not retrieve stats");
+        assertThat(isError(result)).isTrue();
+        assertThat(text(result)).contains("Could not retrieve stats");
+    }
+
+    @Test
+    void getTopUrls_noAuthenticatedUser_returnsInternalErrorResult() {
+
+        McpUserContext.clear();
+
+        CallToolResult result = mcpAnalyticsTools.getTopUrls(5);
+
+        assertThat(isError(result)).isTrue();
+        verifyNoInteractions(resilientAnalyticsOps);
     }
 
     @Test
@@ -117,9 +162,10 @@ class McpAnalyticsToolsTests {
         when(resilientAnalyticsOps.getTopUrls(5, USER_ID))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
-        String result = mcpAnalyticsTools.getTopUrls(5);
+        CallToolResult result = mcpAnalyticsTools.getTopUrls(5);
 
-        assertThat(result).contains("temporarily unavailable");
+        assertThat(isError(result)).isTrue();
+        assertThat(text(result)).contains("temporarily unavailable");
     }
 
     @Test
@@ -128,21 +174,26 @@ class McpAnalyticsToolsTests {
         when(resilientAnalyticsOps.getTopUrls(5, USER_ID))
                 .thenReturn(CompletableFuture.completedFuture(List.of()));
 
-        String result = mcpAnalyticsTools.getTopUrls(5);
+        CallToolResult result = mcpAnalyticsTools.getTopUrls(5);
 
-        assertThat(result).contains("don't have any URLs");
+        assertThat(isError(result)).isFalse();
+        assertThat(text(result)).contains("don't have any URLs");
+        assertThat(result.structuredContent()).isEqualTo(List.of());
     }
 
     @Test
-    void getTopUrls_withData_returnsFormattedList() {
+    void getTopUrls_withData_returnsFormattedListAndStructuredContent() {
 
         when(resilientAnalyticsOps.getTopUrls(5, USER_ID))
                 .thenReturn(CompletableFuture.completedFuture(
                         List.of(new AnalyticsOperationsService.TopUrlResult(1L, 99L))
                 ));
 
-        String result = mcpAnalyticsTools.getTopUrls(5);
+        CallToolResult result = mcpAnalyticsTools.getTopUrls(5);
 
-        assertThat(result).contains("urlId 1").contains("99 clicks");
+        assertThat(isError(result)).isFalse();
+        assertThat(text(result)).contains("urlId 1").contains("99 clicks");
+        assertThat(result.structuredContent())
+                .isEqualTo(List.of(new McpAnalyticsTools.TopUrlPayload(1L, 99L)));
     }
 }

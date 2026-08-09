@@ -3,6 +3,9 @@ package com.shortlyai.ai.mcp.tools;
 import com.shortlyai.ai.mcp.auth.McpUserContext;
 import com.shortlyai.ai.operations.ResilientUrlOps;
 import com.shortlyai.ai.operations.UrlOperationsService;
+import io.modelcontextprotocol.spec.McpSchema;
+import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
+import io.modelcontextprotocol.spec.McpSchema.TextContent;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -12,11 +15,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.ai.mcp.annotation.context.McpSyncRequestContext;
+import org.springframework.ai.mcp.annotation.context.StructuredElicitResult;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.web.client.HttpClientErrorException;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -38,6 +43,7 @@ class McpUrlToolsTests {
 
     @BeforeEach
     void setUp() {
+
         mcpUrlTools = new McpUrlTools(resilientUrlOps);
         McpUserContext.set(USER_ID);
     }
@@ -47,13 +53,29 @@ class McpUrlToolsTests {
         McpUserContext.clear();
     }
 
+    // CallToolResult can carry multiple Content blocks - concatenate the text ones
+    private static String text(CallToolResult result) {
+
+        return result.content().stream()
+                .filter(c -> c instanceof TextContent)
+                .map(c -> ((TextContent) c).text())
+                .collect(Collectors.joining());
+    }
+
+    private static boolean isError(CallToolResult result) {
+        return Boolean.TRUE.equals(result.isError());
+    }
+
     @Test
-    void shortenUrl_noAuthenticatedUser_throwsIllegalState() {
+    void shortenUrl_noAuthenticatedUser_returnsInternalErrorResult() {
 
         McpUserContext.clear(); // simulate filter misconfiguration
 
-        assertThatThrownBy(() -> mcpUrlTools.shortenUrl("https://example.com", context))
-                .isInstanceOf(IllegalStateException.class);
+        CallToolResult result = mcpUrlTools.shortenUrl("https://example.com", context);
+
+        assertThat(isError(result)).isTrue();
+        assertThat(text(result)).contains("Internal error");
+        verifyNoInteractions(resilientUrlOps);
     }
 
     @Test
@@ -61,29 +83,44 @@ class McpUrlToolsTests {
 
         when(context.elicitEnabled()).thenReturn(true);
 
-        String result = mcpUrlTools.shortenUrl("not-a-url", context);
+        CallToolResult result = mcpUrlTools.shortenUrl("not-a-url", context);
 
-        assertThat(result).contains("does not look like a valid URL");
+        assertThat(isError(result)).isTrue();
+        assertThat(text(result)).contains("does not look like a valid URL");
         verifyNoInteractions(resilientUrlOps);
     }
 
     @Test
-    void shortenUrl_success_returnsFormattedShortUrl() {
+    void shortenUrl_success_returnsFormattedShortUrlAndStructuredContent() {
 
-        when(context.elicitEnabled()).thenReturn(false);
-
-        UrlOperationsService.ShortenResult result =
-                new UrlOperationsService.ShortenResult(7L, "abc123", "http://short.ly/abc123");
+        UrlOperationsService.ShortenResult shortenResult =
+                new UrlOperationsService.ShortenResult(
+                        7L,
+                        "abc123",
+                        "http://short.ly/abc123"
+                );
 
         when(resilientUrlOps.shorten("https://example.com", USER_ID))
-                .thenReturn(CompletableFuture.completedFuture(result));
+                .thenReturn(CompletableFuture.completedFuture(shortenResult));
 
-        String response = mcpUrlTools.shortenUrl("https://example.com", context);
+        CallToolResult result =
+                mcpUrlTools.shortenUrl("https://example.com", context);
 
-        assertThat(response)
-                .contains("http://short.ly/abc123")
-                .contains("urlId: 7")
-                .contains("slug: abc123");
+        assertThat(isError(result)).isFalse();
+
+        assertThat(text(result))
+                .isEqualTo("Short URL created: http://short.ly/abc123 (slug: abc123)");
+
+        assertThat(result.structuredContent())
+                .isEqualTo(
+                        new McpUrlTools.ShortenPayload(
+                                "http://short.ly/abc123",
+                                7L,
+                                "abc123"
+                        )
+                );
+
+        verify(resilientUrlOps).shorten("https://example.com", USER_ID);
     }
 
     @Test
@@ -94,9 +131,10 @@ class McpUrlToolsTests {
         when(resilientUrlOps.shorten("https://example.com", USER_ID))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
-        String response = mcpUrlTools.shortenUrl("https://example.com", context);
+        CallToolResult result = mcpUrlTools.shortenUrl("https://example.com", context);
 
-        assertThat(response).contains("temporarily unavailable");
+        assertThat(isError(result)).isTrue();
+        assertThat(text(result)).contains("temporarily unavailable");
     }
 
     @Test
@@ -112,9 +150,10 @@ class McpUrlToolsTests {
 
         when(resilientUrlOps.shorten("https://example.com", USER_ID)).thenReturn(failed);
 
-        String response = mcpUrlTools.shortenUrl("https://example.com", context);
+        CallToolResult result = mcpUrlTools.shortenUrl("https://example.com", context);
 
-        assertThat(response).contains("Could not shorten URL");
+        assertThat(isError(result)).isTrue();
+        assertThat(text(result)).contains("Could not shorten URL");
     }
 
     @Test
@@ -132,7 +171,18 @@ class McpUrlToolsTests {
     }
 
     @Test
-    void getUrlDetails_success_returnsFormattedDetails() {
+    void getUrlDetails_noAuthenticatedUser_returnsInternalErrorResult() {
+
+        McpUserContext.clear();
+
+        CallToolResult result = mcpUrlTools.getUrlDetails("myslug");
+
+        assertThat(isError(result)).isTrue();
+        verifyNoInteractions(resilientUrlOps);
+    }
+
+    @Test
+    void getUrlDetails_success_returnsFormattedDetailsAndStructuredContent() {
 
         UrlOperationsService.UrlDetails details =
                 new UrlOperationsService.UrlDetails(3L, "myslug", "https://x.com", "http://short.ly/myslug", 42L);
@@ -140,9 +190,12 @@ class McpUrlToolsTests {
         when(resilientUrlOps.getDetails("myslug", USER_ID))
                 .thenReturn(CompletableFuture.completedFuture(details));
 
-        String response = mcpUrlTools.getUrlDetails("myslug");
+        CallToolResult result = mcpUrlTools.getUrlDetails("myslug");
 
-        assertThat(response).contains("urlId: 3").contains("clicks: 42");
+        assertThat(isError(result)).isFalse();
+        assertThat(text(result)).contains("urlId: 3").contains("clicks: 42");
+        assertThat(result.structuredContent())
+                .isEqualTo(new McpUrlTools.UrlDetailsPayload(3L, "myslug", "https://x.com", "http://short.ly/myslug", 42L));
     }
 
     @Test
@@ -151,9 +204,21 @@ class McpUrlToolsTests {
         when(resilientUrlOps.getDetails("ghost", USER_ID))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
-        String response = mcpUrlTools.getUrlDetails("ghost");
+        CallToolResult result = mcpUrlTools.getUrlDetails("ghost");
 
-        assertThat(response).contains("temporarily unavailable");
+        assertThat(isError(result)).isTrue();
+        assertThat(text(result)).contains("temporarily unavailable");
+    }
+
+    @Test
+    void deleteUrl_noAuthenticatedUser_returnsInternalErrorResult() {
+
+        McpUserContext.clear();
+
+        CallToolResult result = mcpUrlTools.deleteUrl("toDelete", context);
+
+        assertThat(isError(result)).isTrue();
+        verifyNoInteractions(resilientUrlOps);
     }
 
     @Test
@@ -162,42 +227,83 @@ class McpUrlToolsTests {
         when(resilientUrlOps.getDetails("ghost", USER_ID))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
-        String response = mcpUrlTools.deleteUrl("ghost", context);
+        CallToolResult result = mcpUrlTools.deleteUrl("ghost", context);
 
-        assertThat(response).contains("Could not find a URL");
+        assertThat(isError(result)).isTrue();
+        assertThat(text(result)).contains("Could not find a URL");
         verify(resilientUrlOps, never()).delete(any(), any());
     }
 
     @Test
-    void deleteUrl_noElicitationSupport_deletesDirectly() {
+    void deleteUrl_noElicitationSupport_refusesDeletion() {
 
         UrlOperationsService.UrlDetails details =
-                new UrlOperationsService.UrlDetails(4L, "toDelete", "https://x.com", "http://short.ly/toDelete", 0L);
+                new UrlOperationsService.UrlDetails(
+                        4L,
+                        "toDelete",
+                        "https://x.com",
+                        "http://short.ly/toDelete",
+                        0L
+                );
 
         when(resilientUrlOps.getDetails("toDelete", USER_ID))
                 .thenReturn(CompletableFuture.completedFuture(details));
+
         when(context.elicitEnabled()).thenReturn(false);
-        when(resilientUrlOps.delete("toDelete", USER_ID)).thenReturn(CompletableFuture.completedFuture(true));
 
-        String response = mcpUrlTools.deleteUrl("toDelete", context);
+        CallToolResult result = mcpUrlTools.deleteUrl("toDelete", context);
 
-        assertThat(response).isEqualTo("Deleted URL with slug: toDelete");
-        verify(resilientUrlOps).delete("toDelete", USER_ID);
+        assertThat(isError(result)).isTrue();
+
+        assertThat(text(result))
+                .contains("NOT deleted")
+                .contains("can't show a confirmation prompt");
+
+        assertThat(result.structuredContent())
+                .isEqualTo(new McpUrlTools.DeletePayload("toDelete", false));
+
+        verify(resilientUrlOps, never()).delete(anyString(), anyString());
     }
 
     @Test
     void deleteUrl_deleteCallFails_returnsUnavailableMessage() {
 
         UrlOperationsService.UrlDetails details =
-                new UrlOperationsService.UrlDetails(4L, "toDelete", "https://x.com", "http://short.ly/toDelete", 0L);
+                new UrlOperationsService.UrlDetails(
+                        4L,
+                        "toDelete",
+                        "https://x.com",
+                        "http://short.ly/toDelete",
+                        0L
+                );
+
+        @SuppressWarnings("unchecked")
+        StructuredElicitResult<McpUrlTools.DeleteConfirmation> confirmation =
+                mock(StructuredElicitResult.class);
 
         when(resilientUrlOps.getDetails("toDelete", USER_ID))
                 .thenReturn(CompletableFuture.completedFuture(details));
-        when(context.elicitEnabled()).thenReturn(false);
-        when(resilientUrlOps.delete("toDelete", USER_ID)).thenReturn(CompletableFuture.completedFuture(false));
 
-        String response = mcpUrlTools.deleteUrl("toDelete", context);
+        when(context.elicitEnabled()).thenReturn(true);
 
-        assertThat(response).contains("temporarily unavailable");
+        when(context.elicit(any(), eq(McpUrlTools.DeleteConfirmation.class)))
+                .thenReturn(confirmation);
+
+        when(confirmation.action()).thenReturn(McpSchema.ElicitResult.Action.ACCEPT);
+
+        when(confirmation.structuredContent())
+                .thenReturn(new McpUrlTools.DeleteConfirmation(true));
+
+        when(resilientUrlOps.delete("toDelete", USER_ID))
+                .thenReturn(CompletableFuture.completedFuture(false));
+
+        CallToolResult result = mcpUrlTools.deleteUrl("toDelete", context);
+
+        assertThat(isError(result)).isTrue();
+        assertThat(text(result))
+                .contains("temporarily unavailable");
+
+        verify(resilientUrlOps).delete("toDelete", USER_ID);
     }
+
 }
