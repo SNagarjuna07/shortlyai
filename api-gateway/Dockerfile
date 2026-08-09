@@ -15,9 +15,17 @@ COPY mvnw .
 COPY api-gateway/src api-gateway/src
 RUN ./mvnw -pl api-gateway -am package -DskipTests
 
+# Extract into layers instead of copying one fat jar
+RUN java -Djarmode=tools -jar api-gateway/target/*.jar extract --layers --launcher --destination api-gateway/extracted
+
 FROM eclipse-temurin:25-jre AS runtime
 WORKDIR /app
-COPY --from=build /workspace/api-gateway/target/*.jar app.jar
+
+# Order matters: least-changing first for best cache reuse
+COPY --from=build /workspace/api-gateway/extracted/dependencies/ ./
+COPY --from=build /workspace/api-gateway/extracted/spring-boot-loader/ ./
+COPY --from=build /workspace/api-gateway/extracted/snapshot-dependencies/ ./
+COPY --from=build /workspace/api-gateway/extracted/application/ ./
 
 EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "app.jar"]
+ENTRYPOINT ["java", "org.springframework.boot.loader.launch.JarLauncher"]

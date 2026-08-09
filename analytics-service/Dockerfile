@@ -15,9 +15,17 @@ COPY mvnw .
 COPY analytics-service/src analytics-service/src
 RUN ./mvnw -pl analytics-service -am package -DskipTests
 
+# Extract into layers instead of copying one fat jar
+RUN java -Djarmode=tools -jar analytics-service/target/*.jar extract --layers --launcher --destination analytics-service/extracted
+
 FROM eclipse-temurin:25-jre AS runtime
 WORKDIR /app
-COPY --from=build /workspace/analytics-service/target/*.jar app.jar
+
+# Order matters: least-changing first for best cache reuse
+COPY --from=build /workspace/analytics-service/extracted/dependencies/ ./
+COPY --from=build /workspace/analytics-service/extracted/spring-boot-loader/ ./
+COPY --from=build /workspace/analytics-service/extracted/snapshot-dependencies/ ./
+COPY --from=build /workspace/analytics-service/extracted/application/ ./
 
 EXPOSE 8083
-ENTRYPOINT ["java", "-jar", "app.jar"]
+ENTRYPOINT ["java", "org.springframework.boot.loader.launch.JarLauncher"]
