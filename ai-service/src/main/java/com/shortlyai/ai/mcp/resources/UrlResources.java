@@ -8,6 +8,7 @@ import com.shortlyai.ai.operations.UrlOperationsService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.mcp.annotation.McpArg;
+import org.springframework.ai.mcp.annotation.McpComplete;
 import org.springframework.ai.mcp.annotation.McpResource;
 import org.springframework.stereotype.Component;
 
@@ -103,6 +104,25 @@ public class UrlResources {
                 .toList();
 
         return writeJson(resources);
+    }
+
+    // completion capability - ties to the shortly://url/{slug} resource template
+    @McpComplete(uri = "shortly://url/{slug}")
+    public List<String> completeSlug(String prefix) {
+
+        String userId = McpUserContext.get();
+
+        List<UrlResource> all = resilientUrlOps
+                .getAllForUser(userId)
+                .join();
+
+        if (all == null) return List.of();
+
+        return all.stream()
+                .map(UrlResource::slug)
+                .filter(s -> s.startsWith(prefix))
+                .limit(10)
+                .toList();
     }
 
     private String writeJson(Object value) {
