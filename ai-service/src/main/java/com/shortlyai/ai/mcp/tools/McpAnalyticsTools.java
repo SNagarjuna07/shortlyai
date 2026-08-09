@@ -5,6 +5,7 @@ import com.shortlyai.ai.operations.AnalyticsOperationsService;
 import com.shortlyai.ai.operations.ResilientAnalyticsOps;
 import com.shortlyai.ai.operations.ResilientUrlOps;
 import com.shortlyai.ai.operations.UrlOperationsService;
+import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.mcp.annotation.McpTool;
@@ -24,17 +25,22 @@ public class McpAnalyticsTools {
 
     private final ResilientUrlOps resilientUrlOps;
 
-    // userId from McpKeyFilter-injected context — not from LLM input
-    private String authenticatedUserId() {
+    public record UrlStatsPayload(String slug, long totalClicks) {}
 
-        String userId = McpUserContext.get();
+    public record TopUrlPayload(long urlId, long clickCount) {}
 
-        if (userId == null) {
+    private String authenticatedUserIdOrNull() {
+        return McpUserContext.get();
+    }
 
-            throw new IllegalStateException("No authenticated userId in MCP context - filter misconfigured");
-        }
+    private CallToolResult internalAuthError(String toolName) {
 
-        return userId;
+        log.error("MCP {} - no authenticated userId in context, filter misconfigured", toolName);
+
+        return CallToolResult.builder()
+                .addTextContent("Internal error - request could not be completed.")
+                .isError(true)
+                .build();
     }
 
     @McpTool(name = "get-url-stats", description = """
@@ -43,25 +49,28 @@ public class McpAnalyticsTools {
             URL, call get_url_details instead - it returns both in one call, making
             a separate get_url_stats call unnecessary in that case.
             """)
-    public String getUrlStats(
+    public CallToolResult getUrlStats(
             @McpToolParam(description = "The short slug of the URL (e.g. 'abc123')", required = true)
             String slug
     ) {
 
-        String userId = authenticatedUserId();
+        String userId = authenticatedUserIdOrNull();
+
+        if (userId == null) return internalAuthError("get-url-stats");
 
         log.info("MCP tool get-url-stats invoked for userId: {}, slug: {}", userId, slug);
 
         try {
 
-            // analytics-service's getStats is keyed by numeric urlId, not slug -
-            // resolve it via url-service first.
             UrlOperationsService.UrlDetails details = resilientUrlOps
                     .getDetails(slug, userId)
                     .join();
 
             if (details == null) {
-                return "Could not find a URL with slug '%s'.".formatted(slug);
+                return CallToolResult.builder()
+                        .addTextContent("Could not find a URL with slug '%s'.".formatted(slug))
+                        .isError(true)
+                        .build();
             }
 
             AnalyticsOperationsService.StatsResult stats = resilientAnalyticsOps
@@ -69,28 +78,29 @@ public class McpAnalyticsTools {
                     .join();
 
             if (stats == null) {
-                return "Click stats for '%s' temporarily unavailable."
-                        .formatted(slug);
+
+                return CallToolResult.builder()
+                        .addTextContent("Click stats for '%s' temporarily unavailable.".formatted(slug))
+                        .isError(true)
+                        .build();
             }
 
-            return "URL '%s' has %d total clicks"
-                    .formatted(slug, stats.totalClicks());
+            return CallToolResult.builder()
+                    .addTextContent("URL '%s' has %d total clicks".formatted(slug, stats.totalClicks()))
+                    .structuredContent(new UrlStatsPayload(slug, stats.totalClicks()))
+                    .build();
 
         } catch (CompletionException e) {
 
             if (e.getCause() instanceof HttpClientErrorException httpEx) {
 
-                log.warn(
-                        "MCP get-url-stats 4xx userId: {}, slug: {}, status: {}",
-                        userId,
-                        slug,
-                        httpEx.getStatusCode()
-                );
+                log.warn("MCP get-url-stats 4xx userId: {}, slug: {}, status: {}", userId, slug, httpEx.getStatusCode());
 
-                return "Could not retrieve stats for '%s': %s"
-                        .formatted(slug, httpEx.getStatusText());
+                return CallToolResult.builder()
+                        .addTextContent("Could not retrieve stats for '%s': %s".formatted(slug, httpEx.getStatusText()))
+                        .isError(true)
+                        .build();
             }
-
             throw e;
         }
     }
@@ -102,51 +112,75 @@ public class McpAnalyticsTools {
             URL. Each result includes the slug, original URL, shortened URL and click
             count - no follow-up call needed for basic info.
             """)
-    public String getTopUrls(
+    public CallToolResult getTopUrls(
             @McpToolParam(description = "how many top URLs to return")
             int limit
     ) {
 
-        String userId = authenticatedUserId();
+        String userId = authenticatedUserIdOrNull();
+
+        if (userId == null) return internalAuthError("get-top-urls");
+
+        if (limit < 1 || limit > 50) {
+
+            return CallToolResult.builder()
+                    .addTextContent("limit must be between 1 and 50.")
+                    .isError(true)
+                    .build();
+        }
 
         log.info("Tool getTopUrls userId: {} limit: {}", userId, limit);
 
         try {
 
             List<AnalyticsOperationsService.TopUrlResult> topUrls =
-                    resilientAnalyticsOps
-                            .getTopUrls(limit, userId)
-                            .join();
+                    resilientAnalyticsOps.getTopUrls(limit, userId).join();
 
             if (topUrls == null) {
-                // the actual failure case - CB open, timeout, retries exhausted
-                return "Top URLs temporarily unavailable, analytics-service is down.";
+
+                return CallToolResult.builder()
+                        .addTextContent("Top URLs temporarily unavailable, analytics-service is down.")
+                        .isError(true)
+                        .build();
             }
 
             if (topUrls.isEmpty()) {
-                // genuinely no data yet - not a failure
-                return "You don't have any URLs with recorded clicks yet.";
+
+                return CallToolResult.builder()
+                        .addTextContent("You don't have any URLs with recorded clicks yet.")
+                        .structuredContent(List.<TopUrlPayload>of())
+                        .build();
             }
 
             log.debug("getTopUrls userId: {} count: {}", userId, topUrls.size());
 
             StringBuilder sb = new StringBuilder("Top URLs:\n");
 
-            for (AnalyticsOperationsService.TopUrlResult url : topUrls) {
-                sb.append("- urlId ")
-                        .append(url.urlId())
-                        .append(": ")
-                        .append(url.clickCount())
-                        .append(" clicks\n");
-            }
+            List<TopUrlPayload> payload = topUrls.stream()
+                    .map(url -> {
+                        sb.append("- urlId ")
+                                .append(url.urlId())
+                                .append(": ")
+                                .append(url.clickCount())
+                                .append(" clicks\n");
 
-            return sb.toString();
+                        return new TopUrlPayload(url.urlId(), url.clickCount());
+                    })
+                    .toList();
+
+            return CallToolResult.builder()
+                    .addTextContent(sb.toString())
+                    .structuredContent(payload)
+                    .build();
 
         } catch (Exception ex) {
 
             log.error("Failed to fetch top URLs for userId: {} limit: {}", userId, limit, ex);
 
-            return "Top URLs temporarily unavailable, analytics-service is down.";
+            return CallToolResult.builder()
+                    .addTextContent("Top URLs temporarily unavailable, analytics-service is down.")
+                    .isError(true)
+                    .build();
         }
     }
 }
