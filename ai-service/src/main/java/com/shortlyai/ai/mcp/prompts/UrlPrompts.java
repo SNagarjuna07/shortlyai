@@ -1,6 +1,7 @@
 package com.shortlyai.ai.mcp.prompts;
 
 import com.shortlyai.ai.mcp.auth.McpUserContext;
+import com.shortlyai.ai.mcp.resources.UrlResources;
 import com.shortlyai.ai.operations.AnalyticsOperationsService;
 import com.shortlyai.ai.operations.ResilientAnalyticsOps;
 import com.shortlyai.ai.operations.ResilientUrlOps;
@@ -13,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NonNull;
 import org.springframework.ai.mcp.annotation.McpArg;
+import org.springframework.ai.mcp.annotation.McpComplete;
 import org.springframework.ai.mcp.annotation.McpPrompt;
 import org.springframework.stereotype.Component;
 
@@ -94,5 +96,23 @@ public class UrlPrompts {
                          totalClicks,
                          totalClicks
                  );
+    }
+
+    @McpComplete(prompt = "analyze-url")
+    public List<String> completeSlugForAnalyze(String prefix) {
+
+        String userId = McpUserContext.get();
+
+        List<UrlResources.UrlResource> all =
+                resilientUrlOps.getAllForUser(userId)
+                        .join();
+
+        if (all == null) return List.of();
+
+        return all.stream()
+                .map(UrlResources.UrlResource::slug)
+                .filter(s -> s.startsWith(prefix))
+                .limit(10)
+                .toList();
     }
 }
