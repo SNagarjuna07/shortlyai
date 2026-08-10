@@ -1,22 +1,29 @@
 package com.shortlyai.ai.common.security;
 
+import com.shortlyai.ai.common.exception.ErrorResponse;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
+import java.time.Instant;
 import java.util.List;
 
 @Component
 @Slf4j
+@RequiredArgsConstructor
 public class HeaderAuthFilter extends OncePerRequestFilter {
+
+    private final JsonMapper jsonMapper;
 
     @Override
     protected void doFilterInternal(
@@ -28,7 +35,11 @@ public class HeaderAuthFilter extends OncePerRequestFilter {
         String path = request.getRequestURI();
 
         // /mcp/** has its own auth (McpKeyFilter) - skip here
-        if (path.startsWith("/mcp") || path.contains("/actuator") || path.contains("/v3/api-docs")) {
+        if (
+                path.startsWith("/mcp")
+                        || path.contains("/actuator")
+                        || path.contains("/v3/api-docs")
+        ) {
 
             filterChain.doFilter(request, response);
 
@@ -39,14 +50,20 @@ public class HeaderAuthFilter extends OncePerRequestFilter {
 
         if (userId == null || userId.isBlank()) {
 
+            log.warn("Missing X-User-Id on: {}", path);
+
             response.setStatus(401);
             response.setContentType("application/json");
             response.setCharacterEncoding("UTF-8");
-            response.getWriter().write("""
-                    {"error":"Missing X-User-Id header"}
-                    """);
 
-            log.warn("Missing X-User-Id on: {}", path);
+            ErrorResponse error = new ErrorResponse(
+                    401,
+                    "Missing X-User-Id header",
+                    path,
+                    Instant.now()
+            );
+
+            response.getWriter().write(jsonMapper.writeValueAsString(error));
 
             return;
         }
