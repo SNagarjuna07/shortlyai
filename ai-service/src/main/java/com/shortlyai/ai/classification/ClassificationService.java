@@ -14,7 +14,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 
-import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 
@@ -74,8 +73,11 @@ public class ClassificationService {
 
         log.warn("Classification failed, url: {}, reason: {}", request.url(), t.getMessage());
 
-        return CompletableFuture.completedFuture(
-                new ClassificationResponse(request.url(), "Unknown", 0.0, List.of())
-        );
+        // null, not a fake "Unknown" response: a real LLM-judged "Unknown" and a
+        // transient Groq outage used to look identical and both got published +
+        // permanently persisted on the url row, with no way to retell them apart
+        // or retry once Groq recovered. UrlCreatedEventListener treats null as
+        // "don't publish anything, url stays unclassified for now".
+        return CompletableFuture.completedFuture(null);
     }
 }
