@@ -159,7 +159,7 @@ class ClassificationServiceTests {
     }
 
     @Test
-    void classificationFallback_returnsUnknownWithZeroConfidence() {
+    void classificationFallback_returnsNullSoCallerSkipsPublishing() {
 
         ClassificationRequest request =
                 new ClassificationRequest("https://example.com");
@@ -171,9 +171,9 @@ class ClassificationServiceTests {
                 )
                 .join();
 
-        assertThat(fallback.title()).isEqualTo(request.url());
-        assertThat(fallback.category()).isEqualTo("Unknown");
-        assertThat(fallback.confidence()).isEqualTo(0.0);
-        assertThat(fallback.tags()).isEmpty();
+        // null, not a fake "Unknown" - lets UrlCreatedEventListener tell a
+        // genuine LLM-judged Unknown apart from Groq simply being unreachable,
+        // instead of persisting a false verdict with no path to retry it later.
+        assertThat(fallback).isNull();
     }
 }
