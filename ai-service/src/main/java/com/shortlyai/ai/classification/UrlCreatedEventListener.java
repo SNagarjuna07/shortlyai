@@ -35,6 +35,20 @@ public class UrlCreatedEventListener {
                             )
                             .join();
 
+            if (classification == null) {
+
+                // classify()'s own CircuitBreaker fallback returns null when Groq
+                // is unreachable/degraded - don't publish a fake "Unknown" verdict
+                // that would get permanently persisted with no way to retry once
+                // Groq recovers. URL just stays unclassified for now.
+                log.warn(
+                        "Classification unavailable (degraded/circuit open) for urlId: {} - skipping publish, url stays unclassified",
+                        event.urlId()
+                );
+
+                return;
+            }
+
             UrlClassifiedEvent classifiedEvent = new UrlClassifiedEvent(
                     event.urlId(),
                     classification.title(),
@@ -47,9 +61,12 @@ public class UrlCreatedEventListener {
 
         } catch (Exception ex) {
 
-            log.error("Failed to classify urlId={}", event.urlId(), ex);
-            // no failed_events table in ai-service (no DB) - error handler in
-            // KafkaConfig retries 3x, then logs + moves on
+            log.error("Failed to classify urlId: {}", event.urlId(), ex);
+            // Belt-and-suspenders only - classify()'s own Retry/CircuitBreaker/
+            // TimeLimiter plus the null-fallback above absorb virtually every
+            // failure before it gets here, and this catch doesn't rethrow, so
+            // KafkaConfig's DefaultErrorHandler retry never actually engages
+            // for classification failures.
         }
     }
 }
