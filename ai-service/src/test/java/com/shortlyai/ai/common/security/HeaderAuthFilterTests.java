@@ -1,18 +1,36 @@
 package com.shortlyai.ai.common.security;
 
+import com.shortlyai.ai.common.exception.ErrorResponse;
 import jakarta.servlet.FilterChain;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.core.context.SecurityContextHolder;
+import tools.jackson.databind.json.JsonMapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
+@ExtendWith(MockitoExtension.class)
 class HeaderAuthFilterTests {
 
-    private final HeaderAuthFilter filter = new HeaderAuthFilter();
+    @Mock
+    JsonMapper jsonMapper;
+
+    @InjectMocks
+    HeaderAuthFilter filter;
+
+    @BeforeEach
+    void setUp() {
+
+        filter = new HeaderAuthFilter(jsonMapper);
+    }
 
     @AfterEach
     void tearDown() {
@@ -59,28 +77,52 @@ class HeaderAuthFilterTests {
     @Test
     void doFilter_missingUserIdHeader_returns401_chainNeverCalled() throws Exception {
 
-        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/ai/agent");
-        MockHttpServletResponse response = new MockHttpServletResponse();
+        when(jsonMapper.writeValueAsString(any(ErrorResponse.class)))
+                .thenReturn("""
+                {"message":"Missing X-User-Id header"}
+                """);
+
+        MockHttpServletRequest request =
+                new MockHttpServletRequest("GET", "/api/v1/ai/agent");
+
+        MockHttpServletResponse response =
+                new MockHttpServletResponse();
+
         FilterChain chain = mock(FilterChain.class);
 
         filter.doFilterInternal(request, response, chain);
 
         assertThat(response.getStatus()).isEqualTo(401);
-        assertThat(response.getContentAsString()).contains("Missing X-User-Id header");
+        assertThat(response.getContentAsString())
+                .contains("Missing X-User-Id header");
+
         verifyNoInteractions(chain);
     }
 
     @Test
     void doFilter_blankUserIdHeader_returns401() throws Exception {
 
-        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/ai/agent");
+        when(jsonMapper.writeValueAsString(any(ErrorResponse.class)))
+                .thenReturn("""
+                {"message":"Missing X-User-Id header"}
+                """);
+
+        MockHttpServletRequest request =
+                new MockHttpServletRequest("GET", "/api/v1/ai/agent");
+
         request.addHeader("X-User-Id", "   ");
-        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        MockHttpServletResponse response =
+                new MockHttpServletResponse();
+
         FilterChain chain = mock(FilterChain.class);
 
         filter.doFilterInternal(request, response, chain);
 
         assertThat(response.getStatus()).isEqualTo(401);
+        assertThat(response.getContentAsString())
+                .contains("Missing X-User-Id header");
+
         verifyNoInteractions(chain);
     }
 
