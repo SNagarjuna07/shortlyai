@@ -42,6 +42,9 @@ class ClickServiceImplTest {
     @Mock
     private ValueOperations<String, String> valueOperations;
 
+    @Mock
+    private UrlOwnerRepository urlOwnerRepository;
+
     private ClickServiceImpl clickService;
 
     private static final String OWNER_KEY_PREFIX = "url:owner:";
@@ -52,7 +55,7 @@ class ClickServiceImplTest {
     void setUp() {
 
         clickService = new ClickServiceImpl(
-                clickEventRepository, bloomFilterService, redisTemplate, clickHourlyRepository);
+                clickEventRepository, bloomFilterService, redisTemplate, clickHourlyRepository, urlOwnerRepository);
     }
 
     @Test
@@ -156,24 +159,28 @@ class ClickServiceImplTest {
     }
 
     @Test
-    void getTotalClicks_ownerCacheMiss_fallsBackToClickHistoryCheck_ownerFound() {
+    void getTotalClicks_ownerCacheMiss_fallsBackToOwnershipCheck_ownerFound() {
 
-        // zero-click-URL bug fix: cache miss (e.g. pre-fix data, eviction) —
-        // must fall back to click-history check rather than auto-denying
         UUID userId = UUID.fromString(USER_ID);
 
-        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(redisTemplate.opsForValue())
+                .thenReturn(valueOperations);
 
-        when(valueOperations.get(OWNER_KEY_PREFIX + "99")).thenReturn(null);
-        when(clickEventRepository.existsByUrlIdAndUserId(99L, userId)).thenReturn(true);
+        when(valueOperations.get(OWNER_KEY_PREFIX + "99"))
+                .thenReturn(null);
 
-        when(valueOperations.get("clicks:realtime:99")).thenReturn("17");
+        when(urlOwnerRepository.existsByUrlIdAndUserId(99L, userId))
+                .thenReturn(true);
+
+        when(valueOperations.get("clicks:realtime:99"))
+                .thenReturn("17");
 
         long total = clickService.getTotalClicks(99L, userId);
 
         assertThat(total).isEqualTo(17L);
 
-        verify(clickEventRepository).existsByUrlIdAndUserId(99L, userId);
+        verify(urlOwnerRepository)
+                .existsByUrlIdAndUserId(99L, userId);
     }
 
     @Test
@@ -280,19 +287,27 @@ class ClickServiceImplTest {
     }
 
     @Test
-    void getTotalClicks_ownerCacheMiss_andNoClickHistory_throwsAccessDenied() {
+    void getTotalClicks_ownerCacheMiss_andNoOwnership_throwsAccessDenied() {
 
         Long urlId = 999L;
         UUID callerId = UUID.fromString(USER_ID);
 
-        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
-        when(valueOperations.get(OWNER_KEY_PREFIX + "999")).thenReturn(null);
-        when(clickEventRepository.existsByUrlIdAndUserId(urlId, callerId)).thenReturn(false);
+        when(redisTemplate.opsForValue())
+                .thenReturn(valueOperations);
 
-        assertThatThrownBy(() -> clickService.getTotalClicks(urlId, callerId))
+        when(valueOperations.get(OWNER_KEY_PREFIX + "999"))
+                .thenReturn(null);
+
+        when(urlOwnerRepository.existsByUrlIdAndUserId(urlId, callerId))
+                .thenReturn(false);
+
+        assertThatThrownBy(() ->
+                clickService.getTotalClicks(urlId, callerId)
+        )
                 .isInstanceOf(AccessDeniedException.class);
 
-        verify(clickEventRepository, never()).countByUrlId(anyLong());
+        verify(clickEventRepository, never())
+                .countByUrlId(anyLong());
     }
 
     @Test
@@ -301,14 +316,22 @@ class ClickServiceImplTest {
         Long urlId = 999L;
         UUID callerId = UUID.fromString(USER_ID);
 
-        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
-        when(valueOperations.get(OWNER_KEY_PREFIX + "999")).thenReturn(null);
-        when(clickEventRepository.existsByUrlIdAndUserId(urlId, callerId)).thenReturn(false);
+        when(redisTemplate.opsForValue())
+                .thenReturn(valueOperations);
 
-        assertThatThrownBy(() -> clickService.getHourlyBreakdown(urlId, callerId, 24))
+        when(valueOperations.get(OWNER_KEY_PREFIX + "999"))
+                .thenReturn(null);
+
+        when(urlOwnerRepository.existsByUrlIdAndUserId(urlId, callerId))
+                .thenReturn(false);
+
+        assertThatThrownBy(() ->
+                clickService.getHourlyBreakdown(urlId, callerId, 24)
+        )
                 .isInstanceOf(AccessDeniedException.class);
 
-        verify(clickHourlyRepository, never()).findByUrlIdAndSince(anyLong(), any(Instant.class));
+        verify(clickHourlyRepository, never())
+                .findByUrlIdAndSince(anyLong(), any(Instant.class));
     }
 
     @Test
