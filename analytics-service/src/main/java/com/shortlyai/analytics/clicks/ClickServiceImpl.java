@@ -29,6 +29,8 @@ public class ClickServiceImpl implements ClickService {
 
     private final ClickHourlyRepository clickHourlyRepository;
 
+    private final UrlOwnerRepository urlOwnerRepository;
+
     private static final String OWNER_KEY_PREFIX = "url:owner:";
 
     @Transactional
@@ -86,6 +88,7 @@ public class ClickServiceImpl implements ClickService {
         return clickEventRepository.countByUrlId(urlId);
     }
 
+    @Transactional
     public void initializeCounter(UrlCreatedEvent event) {
 
         String redisKey = "clicks:realtime:" + event.urlId();
@@ -94,6 +97,12 @@ public class ClickServiceImpl implements ClickService {
         // ownership cache, so stats endpoints work before the first click exists
         redisTemplate.opsForValue()
                 .set(OWNER_KEY_PREFIX + event.urlId(), event.userId().toString());
+
+        // durable ownership row - Redis is fast-path, this is the real
+        // source of truth the DB fallback in isOwner() now queries
+        if (!urlOwnerRepository.existsById(event.urlId())) {
+            urlOwnerRepository.save(new UrlOwner(event.urlId(), event.userId()));
+        }
 
         log.debug("Initialized click counter for slug: {} urlId: {}", event.slug(), event.urlId());
     }
@@ -104,6 +113,8 @@ public class ClickServiceImpl implements ClickService {
         clickEventRepository.deleteByUrlId(event.id());
 
         clickHourlyRepository.deleteByUrlId(event.id());
+
+        urlOwnerRepository.deleteByUrlId(event.id());
 
         redisTemplate.delete("clicks:realtime:" + event.id());
 
@@ -141,7 +152,7 @@ public class ClickServiceImpl implements ClickService {
             return cachedOwner.equals(userId.toString());
         }
 
-        return clickEventRepository.existsByUrlIdAndUserId(urlId, userId);
+        return urlOwnerRepository.existsByUrlIdAndUserId(urlId, userId);
     }
 
     // Queries raw click_events grouped by urlId. Returns top N by click count
