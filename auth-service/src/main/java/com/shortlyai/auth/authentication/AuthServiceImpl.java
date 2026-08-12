@@ -123,20 +123,6 @@ public class AuthServiceImpl implements AuthService {
 
         User savedUser = userRepository.save(user);
 
-        String accessToken = jwtUtil.generateAccessToken(
-                savedUser.getId(),
-                savedUser.getEmail(),
-                savedUser.getRole().name()
-        );
-
-        String refreshToken = jwtUtil.generateRefreshToken(
-                savedUser.getId(),
-                savedUser.getEmail(),
-                savedUser.getRole().name()
-        );
-
-        refreshTokenService.store(refreshToken, savedUser.getId().toString());
-
         auditLogService.log(AuditEventType.REGISTER, savedUser.getId(), ip, userAgent);
 
         log.info("Registration successful for userId: {}", savedUser.getId());
@@ -145,14 +131,13 @@ public class AuthServiceImpl implements AuthService {
 
         log.info("Verification mail sent for userId: {}", savedUser.getId());
 
-        return new AuthResponse(accessToken, refreshToken, userMapper.toResponse(savedUser));
+        // No tokens issued here. login() blocks unverified accounts via isVerified()
+        return new AuthResponse(null, null, userMapper.toResponse(savedUser));
     }
 
     @Override
     public AuthResponse refresh(RefreshTokenRequest request, HttpServletRequest httpRequest) {
 
-        // was `&&` — see bug writeup above; `||` fixes both the uncaught-exception
-        // path and the access-token-as-refresh-token gap in one operator swap
         if (!jwtUtil.isTokenValid(request.refreshToken()) || jwtUtil.isAccessToken(request.refreshToken())) {
             throw new InvalidTokenException("Invalid refresh token");
         }
