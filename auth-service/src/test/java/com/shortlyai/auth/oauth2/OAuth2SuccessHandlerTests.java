@@ -167,7 +167,7 @@ class OAuth2SuccessHandlerTests {
         verify(response).sendRedirect(urlCaptor.capture());
 
         assertThat(urlCaptor.getValue())
-                .startsWith("https://app.shortlyai.dev/oauth2/callback?")
+                .startsWith("https://app.shortlyai.dev/oauth2/callback#")
                 .contains("accessToken=ACCESS123")
                 .contains("refreshToken=REFRESH456");
     }
