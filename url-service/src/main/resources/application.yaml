@@ -21,6 +21,7 @@ spring:
         cachePrepStmts: true
         prepStmtCacheSize: 250
         prepStmtCacheSqlLimit: 2048
+    connection-fetch: lazy
 
   jpa:
     open-in-view: false

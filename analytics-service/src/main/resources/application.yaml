@@ -13,6 +13,7 @@ spring:
       maximum-pool-size: 10
       minimum-idle: 2
       connection-timeout: 30000
+    connection-fetch: lazy
 
   jpa:
     open-in-view: false
@@ -37,15 +38,6 @@ spring:
     listener:
       observation-enabled: true
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
-    consumer:
-      group-id: analytics-service-group  # consumer group - Kafka tracks offset per group
-      auto-offset-reset: earliest         # on first start, read from beginning
-      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.springframework.kafka.support.serializer.JacksonJsonDeserializer
-      properties:
-        spring.json.trusted.packages: "com.shortlyai.*"  # whitelist our event classes
-        reconnect.backoff.ms: 1000  # wait 1s before reconnect attempt
-        reconnect.backoff.max.ms: 10000  # max 10s between reconnect attempts
     topics:
       url-created: ${URL_CREATED_EVENT:url.created}
       url-clicked: ${URL_CLICKED_EVENT:url.clicks}
@@ -81,7 +73,7 @@ management:
 
   tracing:
     sampling:
-      probability: 1.0        # 100% in dev, drop to 0.1 in prod
+      probability: 0.1   # 1.0 in dev, set to 0.1 in prod env
 
   opentelemetry:
     tracing:

@@ -17,6 +17,7 @@ spring:
       maximum-pool-size: 8
       minimum-idle: 3
       connection-timeout: 30000
+    connection-fetch: lazy
 
   ai:
     openai:
@@ -213,8 +214,8 @@ resilience4j:
         timeoutDuration: 30s
         cancelRunningFuture: false
       classification:
-          timeoutDuration: 30s
-          cancelRunningFuture: false
+        timeoutDuration: 30s
+        cancelRunningFuture: false
 
   circuitbreaker:
     instances:
@@ -343,16 +344,16 @@ resilience4j:
         ignoreExceptions:
           - org.springframework.web.client.HttpClientErrorException  # Brave 4xx - bad key (401), bad query (400)
       safetyCheck:
-          maxAttempts: 2
-          waitDuration: 500ms
-          retryExceptions:
-            - java.util.concurrent.TimeoutException
+        maxAttempts: 2
+        waitDuration: 500ms
+        retryExceptions:
+          - java.util.concurrent.TimeoutException
 
       classification:
-          maxAttempts: 2
-          waitDuration: 500ms
-          retryExceptions:
-            - java.util.concurrent.TimeoutException
+        maxAttempts: 2
+        waitDuration: 500ms
+        retryExceptions:
+          - java.util.concurrent.TimeoutException
 
 springdoc:
   swagger-ui:
