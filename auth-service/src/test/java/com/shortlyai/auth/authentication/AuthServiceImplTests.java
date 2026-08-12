@@ -2,11 +2,7 @@ package com.shortlyai.auth.authentication;
 
 import com.shortlyai.auth.audit.AuditEventType;
 import com.shortlyai.auth.audit.AuditLogService;
-import com.shortlyai.auth.common.exception.AccountNotVerifiedException;
-import com.shortlyai.auth.common.exception.EmailAlreadyExistsException;
-import com.shortlyai.auth.common.exception.InvalidCredentialsException;
-import com.shortlyai.auth.common.exception.InvalidTokenException;
-import com.shortlyai.auth.common.exception.UserNotFoundException;
+import com.shortlyai.auth.common.exception.*;
 import com.shortlyai.auth.dto.*;
 import com.shortlyai.auth.email.VerificationService;
 import com.shortlyai.auth.security.JwtUtil;
@@ -27,13 +23,14 @@ import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
-import static org.assertj.core.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
-class AuthServiceImplTest {
+class AuthServiceImplTests {
 
     @Mock
     private UserRepository userRepository;
@@ -227,7 +224,7 @@ class AuthServiceImplTest {
     }
 
     @Test
-    void register_newEmail_savesUserAndReturnsTokens() {
+    void register_newEmail_savesUserButIssuesNoTokens() {
 
         RegisterRequest request =
                 new RegisterRequest(
@@ -245,26 +242,23 @@ class AuthServiceImplTest {
         when(userRepository.save(any(User.class)))
                 .thenReturn(testUser);
 
-        when(jwtUtil.generateAccessToken(any(), any(), any()))
-                .thenReturn("access-token");
-
-        when(jwtUtil.generateRefreshToken(any(), any(), any()))
-                .thenReturn("refresh-token");
-
         when(userMapper.toResponse(testUser))
                 .thenReturn(userResponse);
 
         AuthResponse response =
                 authService.register(request, httpRequest);
 
-        assertThat(response.accessToken()).isEqualTo("access-token");
-        assertThat(response.refreshToken()).isEqualTo("refresh-token");
+        // register() no longer issues tokens - login() gates on isVerified(),
+        // and a token with no "verified" claim would bypass that check entirely.
+        assertThat(response.accessToken()).isNull();
+        assertThat(response.refreshToken()).isNull();
         assertThat(response.user()).isEqualTo(userResponse);
 
         verify(userRepository).save(any(User.class));
 
-        verify(refreshTokenService)
-                .store("refresh-token", userId.toString());
+        verify(jwtUtil, never()).generateAccessToken(any(), any(), any());
+        verify(jwtUtil, never()).generateRefreshToken(any(), any(), any());
+        verify(refreshTokenService, never()).store(any(), any());
 
         verify(auditLogService)
                 .log(
