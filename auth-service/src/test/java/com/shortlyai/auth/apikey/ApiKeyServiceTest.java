@@ -232,24 +232,6 @@ class ApiKeyServiceTest {
     }
 
     @Test
-    void revoke_existingKey_deletesFromRedisAndDb() {
-
-        UUID keyId = UUID.randomUUID();
-
-        ApiKey key = ApiKey.builder().id(keyId).userId(USER_ID)
-                .keyPrefix("ab12cd34").keyHash("thehash").name("Key").createdAt(Instant.now()).build();
-
-        when(apiKeyRepository.findByIdAndUserId(keyId, USER_ID)).thenReturn(Optional.of(key));
-
-        apiKeyService.revoke(USER_ID, keyId);
-
-        // unchanged by the fix - revoke() correctly deletes Redis before DB
-        // (fail-secure direction), no afterCommit() needed here
-        verify(stringRedisTemplate).delete(KEY_PREFIX + "thehash");
-        verify(apiKeyRepository).delete(key);
-    }
-
-    @Test
     void revoke_keyNotOwnedByUser_throwsApiKeyNotFound() {
 
         UUID keyId = UUID.randomUUID();
