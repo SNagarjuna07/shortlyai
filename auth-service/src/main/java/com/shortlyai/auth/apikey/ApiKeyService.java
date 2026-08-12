@@ -109,10 +109,21 @@ public class ApiKeyService {
         ApiKey key = apiKeyRepository.findByIdAndUserId(keyId, userId)
                 .orElseThrow(() -> new ApiKeyNotFoundException("API key not found"));
 
-
-        redis.delete(REDIS_MCP_KEY_PREFIX + key.getKeyHash());
-
         apiKeyRepository.delete(key);
+
+        // Redis delete deferred to afterCommit()
+        String hash = key.getKeyHash();
+
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+
+            @Override
+            public void afterCommit() {
+
+                redis.delete(REDIS_MCP_KEY_PREFIX + hash);
+
+                log.debug("Evicted API key hash from cache, keyId: {}", keyId);
+            }
+        });
 
         log.info("API key revoked userId: {}, keyId: {}", userId, keyId);
     }
