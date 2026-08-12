@@ -67,11 +67,13 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
         // Step 2
         // If user exists -> return them
         // If not -> create new User with Provider.GOOGLE, Role.ROLE_FREE, verified=true
-        // Google already verified the email — no verification step needed
+        // Google already verified the email - no verification step needed
         User user = userRepository.findByEmail(email)
                 .map(existing -> { // If user already logged in and tries to log in from Google
                             if (!existing.isVerified()) {
+
                                 existing.setVerified(true);
+
                                 userRepository.save(existing);
                             }
                             return existing;
@@ -115,9 +117,10 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
         );
 
         // Step 5
-        // Frontend reads tokens from URL and stores them
+        // Frontend reads tokens from the URL fragment and stores them.
+        // Fragments are browser-only, never sent in the request, never in Referer header
         String redirectUrl = redirectUri
-                + "?accessToken=" + accessToken
+                + "#accessToken=" + accessToken
                 + "&refreshToken=" + refreshToken;
 
         log.info("OAuth2 login successful for userId: {}", user.getId());
