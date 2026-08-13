@@ -31,13 +31,13 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
 
         http
-                // Disable CSRF — stateless REST API, no browser sessions, not needed
+                // Disable CSRF - stateless REST API, no browser sessions, not needed
                 .csrf(AbstractHttpConfigurer::disable)
 
-                // Disable default form login page — this is a REST service, not a web app
+                // Disable default form login page - this is a REST service, not a web app
                 .formLogin(AbstractHttpConfigurer::disable)
 
-                // Disable HTTP Basic auth popup — JWT/header only
+                // Disable HTTP Basic auth popup - JWT/header only
                 .httpBasic(AbstractHttpConfigurer::disable)
 
                 // Tell Spring Security: never create/use HttpSession
@@ -48,7 +48,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
 
                         // Redirect endpoint is public - anyone can follow a short link
-                        // No auth header needed for GET /api/v1/r/{slug}
+                        // No auth header needed for GET /r/{slug}
                         .requestMatchers(HttpMethod.GET, apiPrefix +"/r/**",
                                 "/actuator/**",
                                 "/swagger-ui.html",
@@ -61,7 +61,7 @@ public class SecurityConfig {
                         .anyRequest().authenticated()
                 );
 
-        // IMPORTANT: We are NOT adding any JWT filter here.
+        // No adding any JWT filter here.
         // url-service never sees the JWT token.
         // The gateway extracts userId and passes it as X-User-Id header.
         // A custom filter (HeaderAuthFilter) reads that header - wired separately.

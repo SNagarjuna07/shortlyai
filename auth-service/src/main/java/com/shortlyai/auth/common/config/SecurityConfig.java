@@ -3,6 +3,7 @@ package com.shortlyai.auth.common.config;
 import com.shortlyai.auth.oauth2.OAuth2SuccessHandler;
 import com.shortlyai.auth.security.JwtAuthFilter;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -14,7 +15,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
-@Configuration // tells Spring: this class produces beans
+@Configuration
 @EnableMethodSecurity
 public class SecurityConfig {
 
@@ -34,24 +35,34 @@ public class SecurityConfig {
         this.apiPrefix = apiPrefix;
     }
 
+    // JwtAuthFilter is a @Component, so Boot would also auto-register it
+    // globally (/*) on top of the addFilterBefore wiring below - running it
+    // twice per request. This turns that automatic registration off.
+    @Bean
+    public FilterRegistrationBean<JwtAuthFilter> jwtAuthFilterRegistration() {
+
+        FilterRegistrationBean<JwtAuthFilter> registration =
+                new FilterRegistrationBean<>(jwtAuthFilter);
+
+        registration.setEnabled(false);
+
+        return registration;
+    }
+
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
 
-        // CSRF — Cross Site Request Forgery protection
-        // Only needed for browser session-based apps (cookies)
-        // JWT APIs are stateless — no cookies, no CSRF risk — safe to disable
         http.csrf(AbstractHttpConfigurer::disable)
 
                 // disabling form login
                 .formLogin(AbstractHttpConfigurer::disable)
 
-                // Sessions — tell Spring never to create an HttpSession
-                // Every request must carry its own JWT — no server-side session state
+                // Every request must carry its own JWT - no server-side session state
                 // IF_REQUIRED because OAuth 2 saves state after redirecting
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
 
-                // Authorization rules — evaluated top to bottom, first match wins
+                // Authorization rules - evaluated top to bottom, first match wins
                 .authorizeHttpRequests(auth ->
                         auth.requestMatchers(apiPrefix + "/auth/me").authenticated()
                                 .requestMatchers(apiPrefix + "/auth/apikeys/**").authenticated()
@@ -62,9 +73,8 @@ public class SecurityConfig {
                                         "/swagger-ui/**").permitAll()
                                 .anyRequest().authenticated())
 
-                // Wire in JwtAuthFilter — runs BEFORE Spring's default auth filter
-                // Order matters — JWT must be validated first so SecurityContext is populated
-                // when Spring's filter runs its own checks
+                // Wire in JwtAuthFilter - runs BEFORE Spring's default auth filter
+                // Order matters - JWT must be validated first so SecurityContext is populated
                 .addFilterBefore(jwtAuthFilter,
                         UsernamePasswordAuthenticationFilter.class)
 
@@ -74,10 +84,9 @@ public class SecurityConfig {
                 );
 
         return http.build();
-
     }
 
-    // BCrypt — industry standard for password hashing
+    // BCrypt - password hashing
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder(12);

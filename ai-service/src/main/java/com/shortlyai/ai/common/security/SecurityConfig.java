@@ -2,6 +2,7 @@ package com.shortlyai.ai.common.security;
 
 import com.shortlyai.ai.mcp.auth.McpKeyFilter;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
@@ -18,6 +19,31 @@ public class SecurityConfig {
     private final HeaderAuthFilter headerAuthFilter;
 
     private final McpKeyFilter mcpKeyFilter;
+
+    // Both filters are @Component, so Boot would also auto-register each of
+    // them globally (/*) on top of the addFilterBefore wiring below - running
+    // each one twice per request. These turn that automatic registration off;
+    @Bean
+    public FilterRegistrationBean<HeaderAuthFilter> headerAuthFilterRegistration() {
+
+        FilterRegistrationBean<HeaderAuthFilter> registration =
+                new FilterRegistrationBean<>(headerAuthFilter);
+
+        registration.setEnabled(false);
+
+        return registration;
+    }
+
+    @Bean
+    public FilterRegistrationBean<McpKeyFilter> mcpKeyFilterRegistration() {
+
+        FilterRegistrationBean<McpKeyFilter> registration =
+                new FilterRegistrationBean<>(mcpKeyFilter);
+
+        registration.setEnabled(false);
+
+        return registration;
+    }
 
     // MCP security
     // Auth is fully delegated to McpKeyFilter (X-MCP-Key -> Redis lookup), not
