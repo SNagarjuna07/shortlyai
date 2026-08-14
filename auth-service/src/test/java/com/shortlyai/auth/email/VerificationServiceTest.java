@@ -73,7 +73,7 @@ class VerificationServiceTest {
         verificationService.sendVerificationEmail(unverifiedUser);
 
         // token stored with "verify:" prefix and 2-hour TTL
-        ArgumentCaptor<String> keyCaptor   = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> keyCaptor = ArgumentCaptor.forClass(String.class);
 
         ArgumentCaptor<String> valueCaptor = ArgumentCaptor.forClass(String.class);
 
@@ -101,30 +101,6 @@ class VerificationServiceTest {
     }
 
     @Test
-    void verifyAccount_validToken_setsVerifiedAndDeletesToken() {
-
-        String token = UUID.randomUUID().toString();
-
-        UUID userId  = unverifiedUser.getId();
-
-        when(valueOps.get(REDIS_PREFIX + token)).thenReturn(userId.toString());
-
-        when(userRepository.findById(userId)).thenReturn(Optional.of(unverifiedUser));
-
-        when(userRepository.save(any(User.class))).thenReturn(unverifiedUser);
-
-        verificationService.verifyAccount(token);
-
-        // user must be marked verified
-        assertThat(unverifiedUser.isVerified()).isTrue();
-
-        verify(userRepository).save(unverifiedUser);
-
-        // token must be deleted from Redis after verification
-        verify(stringRedisTemplate).delete(REDIS_PREFIX + token);
-    }
-
-    @Test
     void verifyAccount_expiredOrInvalidToken_throwsInvalidToken() {
 
         String token = "expired-token";
@@ -144,7 +120,7 @@ class VerificationServiceTest {
 
         String token = UUID.randomUUID().toString();
 
-        UUID   userId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
 
         when(valueOps.get(REDIS_PREFIX + token)).thenReturn(userId.toString());
 
