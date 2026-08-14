@@ -10,6 +10,8 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -91,18 +93,31 @@ public class ClickServiceImpl implements ClickService {
     @Transactional
     public void initializeCounter(UrlCreatedEvent event) {
 
-        String redisKey = "clicks:realtime:" + event.urlId();
-        redisTemplate.opsForValue().setIfAbsent(redisKey, "0");
-
-        // ownership cache, so stats endpoints work before the first click exists
-        redisTemplate.opsForValue()
-                .set(OWNER_KEY_PREFIX + event.urlId(), event.userId().toString());
-
         // durable ownership row - Redis is fast-path, this is the real
         // source of truth the DB fallback in isOwner() now queries
         if (!urlOwnerRepository.existsById(event.urlId())) {
+
             urlOwnerRepository.save(new UrlOwner(event.urlId(), event.userId()));
         }
+
+        String redisKey = "clicks:realtime:" + event.urlId();
+        String ownerKey = OWNER_KEY_PREFIX + event.urlId();
+        String userId = event.userId().toString();
+
+        TransactionSynchronizationManager.registerSynchronization(
+
+                new TransactionSynchronization() {
+
+                    @Override
+                    public void afterCommit() {
+
+                        redisTemplate.opsForValue().setIfAbsent(redisKey, "0");
+
+                        // ownership cache, so stats endpoints work before the first click exists
+                        redisTemplate.opsForValue().set(ownerKey, userId);
+                    }
+                }
+        );
 
         log.debug("Initialized click counter for slug: {} urlId: {}", event.slug(), event.urlId());
     }
