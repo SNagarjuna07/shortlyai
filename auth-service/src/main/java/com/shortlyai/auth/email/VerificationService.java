@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
@@ -66,7 +67,17 @@ public class VerificationService {
 
         userRepository.save(user);
 
-        stringRedisTemplate.delete(REDIS_KEY_PREFIX + token);
+        TransactionSynchronizationManager
+                .registerSynchronization(
+                        new org.springframework.transaction.support.TransactionSynchronization() {
+
+                            @Override
+                            public void afterCommit() {
+
+                                stringRedisTemplate.delete(REDIS_KEY_PREFIX + token);
+                            }
+                        }
+                );
 
         log.info("Account verified: {} and deleted verification token from Redis: {}", user.getName(), REDIS_KEY_PREFIX + token);
     }
