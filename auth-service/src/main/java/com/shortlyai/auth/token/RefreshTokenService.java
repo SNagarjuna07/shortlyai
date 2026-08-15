@@ -6,6 +6,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -43,22 +45,36 @@ public class RefreshTokenService {
             return;
         }
 
-        // Redis - primary lookup path
-        redis.opsForValue().set(
-                REFRESH_TOKEN_PREFIX + sha256Hex(refreshToken),
-                userId,
-                Duration.ofSeconds(ttlSeconds)
-        );
+        String tokenHash = sha256Hex(refreshToken);
 
-        // Postgres - backup + cleanup job source of truth.
+        // Postgres first - backup + cleanup job source of truth.
         // Hash stored, never the raw token - same pattern as MCP API keys.
         RefreshToken entity = RefreshToken.builder()
                 .userId(UUID.fromString(userId))
-                .tokenHash(sha256Hex(refreshToken))
+                .tokenHash(tokenHash)
                 .expiresAt(expiry)
                 .build();
 
         refreshTokenRepository.save(entity);
+
+        // Redis write deferred to afterCommit() - same reasoning as
+        // ApiKeyService.generate(): if the Postgres save above rolls back,
+        // we don't want a Redis-only token with no backing row.
+        TransactionSynchronizationManager.registerSynchronization(
+
+                new TransactionSynchronization() {
+
+                    @Override
+                    public void afterCommit() {
+
+                        redis.opsForValue().set(
+                                REFRESH_TOKEN_PREFIX + tokenHash,
+                                userId,
+                                Duration.ofSeconds(ttlSeconds)
+                        );
+                    }
+                }
+        );
 
         log.debug("Stored refresh token (Redis + Postgres) for userId: {}", userId);
     }
@@ -86,10 +102,22 @@ public class RefreshTokenService {
     @Transactional
     public void delete(String refreshToken) {
 
-        redis.delete(REFRESH_TOKEN_PREFIX + sha256Hex(refreshToken));
+        String tokenHash = sha256Hex(refreshToken);
 
         // Postgres delete by hash - raw token never stored or sent to DB
-        refreshTokenRepository.deleteByTokenHash(sha256Hex(refreshToken));
+        refreshTokenRepository.deleteByTokenHash(tokenHash);
+
+        TransactionSynchronizationManager.registerSynchronization(
+
+                new TransactionSynchronization() {
+
+                    @Override
+                    public void afterCommit() {
+
+                        redis.delete(REFRESH_TOKEN_PREFIX + tokenHash);
+                    }
+                }
+        );
 
         log.debug("Deleted refresh token from Redis + Postgres");
     }
