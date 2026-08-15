@@ -45,20 +45,26 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             if (jwtUtil.isTokenValid(token) && jwtUtil.isAccessToken(token)) {
 
                 Claims claims = jwtUtil.extractAllClaims(token);
+
                 String userId = claims.getSubject();
+
                 String role = claims.get("role", String.class);
 
+                // role from JWT is a plain string e.g. "ROLE_FREE"
                 List<SimpleGrantedAuthority> authorities = List.of(new SimpleGrantedAuthority(role));
 
-                UsernamePasswordAuthenticationToken authToken =
-                        new UsernamePasswordAuthenticationToken(userId, null, authorities);
+                UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
+                        userId,       // principal - who is this user
+                        null,         // credentials - null because JWT already proved identity
+                        authorities   // roles - used by @PreAuthorize checks
+                );
 
                 authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+
                 SecurityContextHolder.getContext().setAuthentication(authToken);
 
             } else {
 
-                // Filters run outside DispatcherServlet - @RestControllerAdvice can't catch a throw here
                 writeUnauthorized(response, request, "Token not valid");
 
                 return;
@@ -83,7 +89,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 message,
                 request.getRequestURI(),
                 Instant.now()
-                );
+        );
 
         response.getWriter().write(jsonMapper.writeValueAsString(error));
     }
