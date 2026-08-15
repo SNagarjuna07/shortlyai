@@ -13,6 +13,8 @@ import org.springframework.dao.TransientDataAccessException;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
+import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.kafka.support.serializer.DeserializationException;
 import org.springframework.kafka.support.serializer.ErrorHandlingDeserializer;
@@ -71,13 +73,13 @@ public class KafkaConfig {
     // Default factory name - picked up automatically by ClickConsumer
     @Bean
     public ConcurrentKafkaListenerContainerFactory<String, UrlClickedEvent>
-    kafkaListenerContainerFactory() {
+    kafkaListenerContainerFactory(KafkaTemplate<Object, Object> template) {
 
         ConcurrentKafkaListenerContainerFactory<String, UrlClickedEvent> factory =
                 new ConcurrentKafkaListenerContainerFactory<>();
 
         factory.setConsumerFactory(clickedConsumerFactory());
-        factory.setCommonErrorHandler(analyticsErrorHandler());
+        factory.setCommonErrorHandler(analyticsErrorHandler(template));
 
         return factory;
     }
@@ -102,13 +104,13 @@ public class KafkaConfig {
     // Named - referenced explicitly in DeleteConsumer's containerFactory
     @Bean
     public ConcurrentKafkaListenerContainerFactory<String, UrlDeletedEvent>
-    deletedKafkaListenerContainerFactory() {
+    deletedKafkaListenerContainerFactory(KafkaTemplate<Object, Object> template) {
 
         ConcurrentKafkaListenerContainerFactory<String, UrlDeletedEvent> factory =
                 new ConcurrentKafkaListenerContainerFactory<>();
 
         factory.setConsumerFactory(deletedConsumerFactory());
-        factory.setCommonErrorHandler(analyticsErrorHandler());
+        factory.setCommonErrorHandler(analyticsErrorHandler(template));
 
         return factory;
     }
@@ -132,27 +134,48 @@ public class KafkaConfig {
 
     @Bean
     public ConcurrentKafkaListenerContainerFactory<String, UrlCreatedEvent>
-    createdKafkaListenerContainerFactory() {
+    createdKafkaListenerContainerFactory(KafkaTemplate<Object, Object> template) {
 
         ConcurrentKafkaListenerContainerFactory<String, UrlCreatedEvent> factory =
                 new ConcurrentKafkaListenerContainerFactory<>();
 
         factory.setConsumerFactory(createdConsumerFactory());
-        factory.setCommonErrorHandler(analyticsErrorHandler());
+        factory.setCommonErrorHandler(analyticsErrorHandler(template));
 
         return factory;
     }
 
     @Bean
-    public DefaultErrorHandler analyticsErrorHandler() {
+    public ConsumerFactory<String, String> dlqConsumerFactory() {
 
-        // 3 retries, 1s apart - but only for exceptions actually worth retrying
-        DefaultErrorHandler handler = new DefaultErrorHandler(
-                (rec, exception) ->
-                        log.error("Giving up on record after retries: topic= {} key= {} error= {}",
-                                rec.topic(), rec.key(), exception.getMessage()),
-                new FixedBackOff(1000L, 3L)
-        );
+        Map<String, Object> props = baseProps();
+        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+        props.put(ConsumerConfig.GROUP_ID_CONFIG, "analytics-service-dlq-monitor");
+
+        return new DefaultKafkaConsumerFactory<>(props);
+    }
+
+    @Bean
+    public ConcurrentKafkaListenerContainerFactory<String, String> dlqKafkaListenerContainerFactory() {
+
+        ConcurrentKafkaListenerContainerFactory<String, String> factory =
+                new ConcurrentKafkaListenerContainerFactory<>();
+
+        factory.setConsumerFactory(dlqConsumerFactory());
+        // deliberately NO setCommonErrorHandler(analyticsErrorHandler(...)) here -
+        // this factory must never be able to dead-letter its own dead-letter topic
+
+        return factory;
+    }
+
+    // shared across all 3 factories now - takes the template so it can
+    // publish to <topic>.DLT instead of just logging and dropping
+    @Bean
+    public DefaultErrorHandler analyticsErrorHandler(KafkaTemplate<Object, Object> template) {
+
+        DeadLetterPublishingRecoverer recoverer = new DeadLetterPublishingRecoverer(template);
+
+        DefaultErrorHandler handler = new DefaultErrorHandler(recoverer, new FixedBackOff(1000L, 3L));
 
         handler.addNotRetryableExceptions(
                 DeserializationException.class,
