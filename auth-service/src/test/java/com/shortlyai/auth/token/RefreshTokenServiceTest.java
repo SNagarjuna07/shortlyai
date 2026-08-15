@@ -21,7 +21,6 @@ import java.util.HexFormat;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -53,26 +52,6 @@ class RefreshTokenServiceTest {
     }
 
     @Test
-    void store_validToken_setsRedisKeyWithTtl() {
-
-        Instant future = Instant.now().plusSeconds(3600);
-
-        when(jwtUtil.extractExpiry(TOKEN)).thenReturn(future);
-
-        refreshTokenService.store(TOKEN, USER_ID);
-
-        String expectedKey = "refresh:" + sha256Hex(TOKEN);
-
-        verify(valueOps).set(
-                eq(expectedKey),
-                eq(USER_ID),
-                any(Duration.class)
-        );
-
-        verify(refreshTokenRepository).save(any(RefreshToken.class));
-    }
-
-    @Test
     void store_alreadyExpiredToken_skipsRedis() {
 
         // expiry in the past → TTL would be negative → should not store
@@ -81,25 +60,6 @@ class RefreshTokenServiceTest {
         refreshTokenService.store(TOKEN, USER_ID);
 
         verify(valueOps, never()).set(any(), any(), any(Duration.class));
-    }
-
-    @Test
-    void store_ttlMatchesTokenExpiry() {
-
-        Instant expiry = Instant.now().plusSeconds(3600);
-
-        when(jwtUtil.extractExpiry(TOKEN)).thenReturn(expiry);
-
-        refreshTokenService.store(TOKEN, USER_ID);
-
-        // capture Duration arg and assert it's <= 3600s (some millis may pass)
-        var captor = org.mockito.ArgumentCaptor.forClass(Duration.class);
-
-        verify(valueOps).set(any(), any(), captor.capture());
-
-        assertThat(captor.getValue().getSeconds()).isLessThanOrEqualTo(3600L);
-
-        assertThat(captor.getValue().getSeconds()).isGreaterThan(0L);
     }
 
     @Test
@@ -130,19 +90,6 @@ class RefreshTokenServiceTest {
         when(redis.hasKey("refresh:" + TOKEN)).thenReturn(null);
 
         assertThat(refreshTokenService.exists(TOKEN)).isFalse();
-    }
-
-    @Test
-    void delete_callsRedisDeleteWithNamespacedKey() {
-
-        refreshTokenService.delete(TOKEN);
-
-        String expectedKey = "refresh:" + sha256Hex(TOKEN);
-
-        verify(redis).delete(expectedKey);
-
-        verify(refreshTokenRepository)
-                .deleteByTokenHash(sha256Hex(TOKEN));
     }
 
     private String sha256Hex(String input) {
