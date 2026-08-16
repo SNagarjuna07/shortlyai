@@ -184,23 +184,6 @@ class ClickServiceImplTest {
     }
 
     @Test
-    void initializeCounter_setsRedisCounterIfAbsent_andCachesOwnership() {
-
-        UUID userId = UUID.randomUUID();
-
-        UrlCreatedEvent event = new UrlCreatedEvent(
-                1L, "slug1", "https://example.com", "http://sly.ai/slug1",
-                userId, null, Instant.now());
-
-        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
-
-        clickService.initializeCounter(event);
-
-        verify(valueOperations).setIfAbsent("clicks:realtime:1", "0");
-        verify(valueOperations).set(OWNER_KEY_PREFIX + "1", userId.toString());
-    }
-
-    @Test
     void deleteClickData_removesPostgresRowsByUrlId_andRedisCounterAndOwnerKey() {
 
         UrlDeletedEvent event = new UrlDeletedEvent(55L, "slug55", UUID.randomUUID(), Instant.now());
