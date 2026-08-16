@@ -3,8 +3,8 @@ package com.shortlyai.ai.mcp.auth;
 import jakarta.servlet.*;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.core.annotation.Order;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
@@ -14,10 +14,9 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 
-// Order(2) - runs after TraceIdFilter(1) so traceId is already in MDC when we log auth events
 @Component
-@Order(2)
 @Slf4j
+@RequiredArgsConstructor
 public class McpKeyFilter implements Filter {
 
     private static final String MCP_KEY_HEADER = "X-MCP-Key";
@@ -25,10 +24,6 @@ public class McpKeyFilter implements Filter {
     private static final String REDIS_MCP_KEY_PREFIX = "mcp:key:";
 
     private final StringRedisTemplate stringRedisTemplate;
-
-    public McpKeyFilter(StringRedisTemplate redis) {
-        this.stringRedisTemplate = redis;
-    }
 
     @Override
     public void doFilter(
