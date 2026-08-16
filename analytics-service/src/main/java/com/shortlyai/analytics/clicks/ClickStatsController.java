@@ -7,6 +7,7 @@ import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -15,6 +16,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("${api.prefix}/analytics")
 @RequiredArgsConstructor
+@Validated
 @Tag(name = "Click Statistics Controller")
 public class ClickStatsController {
 
