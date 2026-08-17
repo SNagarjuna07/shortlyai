@@ -32,6 +32,7 @@ public class ClickCountFlushJob {
 
         List<Long> ids = new ArrayList<>();
         List<Long> counts = new ArrayList<>();
+        List<String> claimedKeys = new ArrayList<>(); // parallel to ids/counts - needed to restore on failure
 
         List<String> pendingKeys = stringRedisTemplate.execute(connection -> {
 
@@ -62,7 +63,7 @@ public class ClickCountFlushJob {
                     for (String key : pendingKeys) {
                         connection.stringCommands().getDel(key.getBytes(StandardCharsets.UTF_8));
                     }
-                    return null; // return value ignored in pipelined mode — replies come back via pipelinedResults
+                    return null; // return value ignored in pipelined mode - replies come back via pipelinedResults
                 }
         );
 
@@ -82,6 +83,7 @@ public class ClickCountFlushJob {
 
                 ids.add(urlId);
                 counts.add(count);
+                claimedKeys.add(key);
 
             } catch (Exception e) {
 
@@ -97,14 +99,34 @@ public class ClickCountFlushJob {
             return;
         }
 
-        urlRepository.batchIncrementClickCounts(
-                ids.toArray(new Long[0]),
-                counts.toArray(new Long[0])
-        );
+        try {
 
-        log.info(
-                "Click flush: batched {} URL(s), {} total clicks into Postgres",
-                ids.size(), counts.stream().mapToLong(Long::longValue).sum()
-        );
+            urlRepository.batchIncrementClickCounts(
+                    ids.toArray(new Long[0]),
+                    counts.toArray(new Long[0])
+            );
+
+            log.info(
+                    "Click flush: batched {} URL(s), {} total clicks into Postgres",
+                    ids.size(), counts.stream().mapToLong(Long::longValue).sum()
+            );
+
+        } catch (Exception e) {
+
+            log.error("Click flush: DB batch increment failed for {} URL(s) - restoring counts to Redis for next cycle: {}",
+                    ids.size(), e.getMessage(), e);
+
+            stringRedisTemplate.executePipelined(
+                    (RedisCallback<Object>) connection -> {
+                        for (int i = 0; i < claimedKeys.size(); i++) {
+                            connection.stringCommands().incrBy(
+                                    claimedKeys.get(i).getBytes(StandardCharsets.UTF_8),
+                                    counts.get(i)
+                            );
+                        }
+                        return null;
+                    }
+            );
+        }
     }
 }
