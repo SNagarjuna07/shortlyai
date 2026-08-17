@@ -124,14 +124,26 @@ public class ShorteningServiceImpl implements ShorteningService {
             savedUrl = urlRepository.save(savedUrl);
         }
 
-        long expiresAtMs = savedUrl.getExpiresAt() == null
+        long finalExpiresAtMs = savedUrl.getExpiresAt() == null
                 ? Long.MAX_VALUE : savedUrl.getExpiresAt().toEpochMilli();
 
-        stringRedisTemplate.opsForValue().set(
-                CACHE_PREFIX + savedUrl.getSlug(),
-                savedUrl.getId() + CACHE_SEP + savedUrl.getUserId() + CACHE_SEP
-                        + expiresAtMs + CACHE_SEP + savedUrl.getOriginalUrl(),
-                Duration.ofSeconds(cacheTtlSeconds));
+        Url finalSavedUrl = savedUrl;
+
+        org.springframework.transaction.support.TransactionSynchronizationManager
+                .registerSynchronization(
+                        new org.springframework.transaction.support.TransactionSynchronization() {
+
+                            @Override
+                            public void afterCommit() {
+
+                                stringRedisTemplate.opsForValue().set(
+                                        CACHE_PREFIX + finalSavedUrl.getSlug(),
+                                        finalSavedUrl.getId() + CACHE_SEP + finalSavedUrl.getUserId() + CACHE_SEP
+                                                + finalExpiresAtMs + CACHE_SEP + finalSavedUrl.getOriginalUrl(),
+                                        Duration.ofSeconds(cacheTtlSeconds));
+                            }
+                        }
+                );
 
         urlEventPublisher.publishCreated(savedUrl);
 
