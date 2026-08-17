@@ -43,10 +43,11 @@ public class ExpiryCleanupJob {
         // Deactivate all in one query - efficient
         int count = urlRepository.deactivateExpiredUrls(now);
 
-        // Evict each from Redis cache
-        expiredSlugs.forEach(slug ->
-                stringRedisTemplate.delete("url:" + slug)
-        );
+        List<String> cacheKeys = expiredSlugs.stream()
+                .map(slug -> "url:" + slug)
+                .toList();
+
+        stringRedisTemplate.delete(cacheKeys);
 
         log.info("Expired URLs cleanup completed - deactivated {} URLs", count);
     }

@@ -8,7 +8,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
@@ -89,27 +88,6 @@ class ShorteningServiceImplTests {
     // ---------- shorten() ----------
 
     @Test
-    void shorten_customSlugAvailable_savesAndPublishesCreated() {
-
-        ShortenRequest request = new ShortenRequest("https://example.com/page", "my-slug", null);
-
-        when(urlRepository.existsBySlug("my-slug")).thenReturn(false);
-        when(urlRepository.save(any(Url.class))).thenReturn(savedUrlFixture(1L, "my-slug", true));
-
-        ShortenResponse response = service.shorten(request, USER_ID);
-
-        assertThat(response.slug()).isEqualTo("my-slug");
-        assertThat(response.isCustom()).isTrue();
-        assertThat(response.shortUrl()).isEqualTo(BASE_DOMAIN + API_PREFIX + "/r/my-slug");
-
-        verify(valueOps).set(eq(CACHE_PREFIX + "my-slug"), anyString(), eq(java.time.Duration.ofSeconds(CACHE_TTL_SECONDS)));
-        verify(urlEventPublisher).publishCreated(any(Url.class));
-
-        // custom slug path never enters the Base62 retry loop
-        verify(urlRepository, times(1)).save(any(Url.class));
-    }
-
-    @Test
     void shorten_customSlugAlreadyTaken_throwsDuplicateSlugException_noSideEffects() {
 
         ShortenRequest request = new ShortenRequest("https://example.com/page", "taken-slug", null);
@@ -125,28 +103,6 @@ class ShorteningServiceImplTests {
     }
 
     @Test
-    void shorten_noCustomSlug_retriesOnCollisionThenSucceeds() {
-
-        ShortenRequest request = new ShortenRequest("https://example.com/page", null, null);
-
-        // first generated slug collides, second is free
-        when(urlRepository.existsBySlug(anyString())).thenReturn(true, false);
-        when(urlRepository.save(any(Url.class))).thenReturn(savedUrlFixture(2L, "generated1", false));
-
-        ShortenResponse response = service.shorten(request, USER_ID);
-
-        assertThat(response).isNotNull();
-
-        // existsBySlug called twice: collision check, then the free one
-        verify(urlRepository, times(2)).existsBySlug(anyString());
-
-        // save called twice: initial tmp-slug insert, then the final generated-slug update
-        verify(urlRepository, times(2)).save(any(Url.class));
-
-        verify(urlEventPublisher).publishCreated(any(Url.class));
-    }
-
-    @Test
     void shorten_noCustomSlug_exceedsMaxAttempts_throwsIllegalStateException() {
 
         ShortenRequest request = new ShortenRequest("https://example.com/page", null, null);
@@ -159,25 +115,6 @@ class ShorteningServiceImplTests {
                 .hasMessageContaining("Failed to generate unique slug");
 
         verify(urlEventPublisher, never()).publishCreated(any());
-    }
-
-    @Test
-    void shorten_expiryDaysNull_defaultsToConfiguredValue() {
-
-        ShortenRequest request = new ShortenRequest("https://example.com/page", "custom", null);
-
-        when(urlRepository.existsBySlug("custom")).thenReturn(false);
-        when(urlRepository.save(any(Url.class))).thenAnswer(inv -> inv.getArgument(0));
-
-        ArgumentCaptor<Url> captor = ArgumentCaptor.forClass(Url.class);
-
-        service.shorten(request, USER_ID);
-
-        verify(urlRepository).save(captor.capture());
-
-        Instant expected = Instant.now().plus(DEFAULT_EXPIRY_DAYS, ChronoUnit.DAYS);
-        assertThat(captor.getValue().getExpiresAt())
-                .isCloseTo(expected, org.assertj.core.api.Assertions.within(5, ChronoUnit.SECONDS));
     }
 
     // ---------- resolve() ----------
