@@ -50,15 +50,22 @@ class ExpiryCleanupJobTests {
 
         List<String> expiredSlugs = List.of("slug1", "slug2", "slug3");
 
-        when(urlRepository.findExpiredSlugs(any(Instant.class))).thenReturn(expiredSlugs);
-        when(urlRepository.deactivateExpiredUrls(any(Instant.class))).thenReturn(3);
+        when(urlRepository.findExpiredSlugs(any(Instant.class)))
+                .thenReturn(expiredSlugs);
+        when(urlRepository.deactivateExpiredUrls(any(Instant.class)))
+                .thenReturn(3);
 
         expiryCleanupJob.cleanupExpiredUrls();
 
         verify(urlRepository).deactivateExpiredUrls(any(Instant.class));
-        verify(stringRedisTemplate).delete("url:slug1");
-        verify(stringRedisTemplate).delete("url:slug2");
-        verify(stringRedisTemplate).delete("url:slug3");
+
+        verify(stringRedisTemplate).delete(
+                List.of(
+                        "url:slug1",
+                        "url:slug2",
+                        "url:slug3"
+                )
+        );
     }
 
     @Test
@@ -66,11 +73,15 @@ class ExpiryCleanupJobTests {
 
         List<String> expiredSlugs = List.of("only-one");
 
-        when(urlRepository.findExpiredSlugs(any(Instant.class))).thenReturn(expiredSlugs);
-        when(urlRepository.deactivateExpiredUrls(any(Instant.class))).thenReturn(1);
+        when(urlRepository.findExpiredSlugs(any(Instant.class)))
+                .thenReturn(expiredSlugs);
+        when(urlRepository.deactivateExpiredUrls(any(Instant.class)))
+                .thenReturn(1);
 
         expiryCleanupJob.cleanupExpiredUrls();
 
-        verify(stringRedisTemplate, times(1)).delete(anyString());
+        verify(stringRedisTemplate).delete(
+                List.of("url:only-one")
+        );
     }
 }
