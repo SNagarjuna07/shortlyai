@@ -14,8 +14,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.HexFormat;
-import java.util.UUID;
+import java.util.*;
 
 @Slf4j
 @Service
@@ -29,6 +28,8 @@ public class RefreshTokenService {
     private final RefreshTokenRepository refreshTokenRepository;
 
     private static final String REFRESH_TOKEN_PREFIX = "refresh:";
+
+    private static final String USER_TOKENS_PREFIX = "refresh:byUser:";
 
     // Store token in Redis (primary, fast) AND Postgres (backup + cleanup source).
     @Transactional
@@ -47,8 +48,6 @@ public class RefreshTokenService {
 
         String tokenHash = sha256Hex(refreshToken);
 
-        // Postgres first - backup + cleanup job source of truth.
-        // Hash stored, never the raw token - same pattern as MCP API keys.
         RefreshToken entity = RefreshToken.builder()
                 .userId(UUID.fromString(userId))
                 .tokenHash(tokenHash)
@@ -57,9 +56,8 @@ public class RefreshTokenService {
 
         refreshTokenRepository.save(entity);
 
-        // Redis write deferred to afterCommit() - same reasoning as
-        // ApiKeyService.generate(): if the Postgres save above rolls back,
-        // we don't want a Redis-only token with no backing row.
+        String userSetKey = USER_TOKENS_PREFIX + userId;
+
         TransactionSynchronizationManager.registerSynchronization(
 
                 new TransactionSynchronization() {
@@ -72,6 +70,10 @@ public class RefreshTokenService {
                                 userId,
                                 Duration.ofSeconds(ttlSeconds)
                         );
+
+                        redis.opsForSet().add(userSetKey, tokenHash);
+
+                        redis.expire(userSetKey, Duration.ofSeconds(ttlSeconds));
                     }
                 }
         );
@@ -104,7 +106,10 @@ public class RefreshTokenService {
 
         String tokenHash = sha256Hex(refreshToken);
 
-        // Postgres delete by hash - raw token never stored or sent to DB
+        // Looked up before delete purely to get userId for the SREM below -
+        // deleteByTokenHash() doesn't tell us what it deleted.
+        Optional<RefreshToken> existing = refreshTokenRepository.findByTokenHash(tokenHash);
+
         refreshTokenRepository.deleteByTokenHash(tokenHash);
 
         TransactionSynchronizationManager.registerSynchronization(
@@ -115,11 +120,53 @@ public class RefreshTokenService {
                     public void afterCommit() {
 
                         redis.delete(REFRESH_TOKEN_PREFIX + tokenHash);
+
+                        existing.ifPresent(rt ->
+                                redis.opsForSet().remove(
+                                        USER_TOKENS_PREFIX + rt.getUserId(),
+                                        tokenHash
+                                )
+                        );
                     }
                 }
         );
 
         log.debug("Deleted refresh token from Redis + Postgres");
+    }
+
+    // Kills EVERY session for a user - used by password reset
+    @Transactional
+    public void revokeAllForUser(UUID userId) {
+
+        String userSetKey = USER_TOKENS_PREFIX + userId;
+
+        refreshTokenRepository.deleteByUserId(userId);
+
+        TransactionSynchronizationManager
+                .registerSynchronization(
+
+                        new TransactionSynchronization() {
+
+                            @Override
+                            public void afterCommit() {
+
+                                Set<String> tokenHashes = redis.opsForSet().members(userSetKey);
+
+                                if (tokenHashes != null && !tokenHashes.isEmpty()) {
+
+                                    List<String> keys = tokenHashes.stream()
+                                            .map(hash -> REFRESH_TOKEN_PREFIX + hash)
+                                            .toList();
+
+                                    redis.delete(keys);
+                                }
+
+                                redis.delete(userSetKey);
+                            }
+                        }
+                );
+
+        log.info("Revoked all refresh tokens for userId: {}", userId);
     }
 
     // SHA-256 hex alg
