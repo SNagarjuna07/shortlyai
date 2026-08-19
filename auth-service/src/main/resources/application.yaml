@@ -6,6 +6,7 @@ oauth2:
 
 app:
   base-url: ${APP_BASE_URL:http://localhost:8081/api/v1/auth/verify?token=}
+  reset-pwd-url: ${APP_RESET_PWD_URL:http://localhost:8081/api/v1/auth/reset-password?token=}
 
 spring:
   application:
