@@ -17,14 +17,24 @@ public class EmailService {
 
     private final String baseUrl;
 
+    private final String resetPwdUrl;
+
     public EmailService(
             JavaMailSender javaMailSender,
-            @Value("${spring.mail.username}") String fromEmail,
-            @Value("${app.base-url}") String baseUrl
+
+            @Value("${spring.mail.username}")
+            String fromEmail,
+
+            @Value("${app.base-url}")
+            String baseUrl,
+
+            @Value("${app.reset-pwd-url}")
+            String resetPwdUrl
     ) {
         this.javaMailSender = javaMailSender;
         this.fromEmail = fromEmail;
         this.baseUrl = baseUrl;
+        this.resetPwdUrl = resetPwdUrl;
     }
 
     @Async("emailExecutor")
@@ -46,6 +56,28 @@ public class EmailService {
         javaMailSender.send(mailMessage);
 
         log.info("Account verification mail sent to user: {}", userName);
+    }
 
+    @Async("emailExecutor")
+    public void sendResetPasswordEmail(String toEmail, String token, String userName) {
+
+        SimpleMailMessage mailMessage = new SimpleMailMessage();
+
+        mailMessage.setSubject("Reset your ShortlyAI password");
+
+        mailMessage.setText(
+                "Hi, "
+                + userName
+                + "\nPlease click this link to reset your ShortlyAI password\n"
+                + resetPwdUrl + token
+        );
+
+        mailMessage.setFrom(fromEmail);
+
+        mailMessage.setTo(toEmail);
+
+        javaMailSender.send(mailMessage);
+
+        log.info("Password reset mail sent to user: {}", userName);
     }
 }
