@@ -2,6 +2,7 @@ package com.shortlyai.auth.authentication;
 
 import com.shortlyai.auth.dto.*;
 import com.shortlyai.auth.email.VerificationService;
+import com.shortlyai.auth.password.PasswordResetService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
@@ -23,6 +24,8 @@ public class AuthController {
     private final AuthService authService;
 
     private final VerificationService verificationService;
+
+    private final PasswordResetService passwordResetService;
 
     @Operation(
             summary = "Login",
@@ -106,5 +109,47 @@ public class AuthController {
         verificationService.verifyAccount(token);
 
         return ResponseEntity.ok().build();
+    }
+
+    @Operation(
+            summary = "Forgot password",
+            description = "Sends an email to the user to reset the password"
+    )
+    @PostMapping("/forgot-password")
+    public ResponseEntity<MessageResponse> forgotPassword(
+            @Valid @RequestBody
+            ForgotPasswordRequest forgotPasswordRequest,
+            HttpServletRequest httpServletRequest
+    ) {
+
+        passwordResetService.sendResetLink(forgotPasswordRequest.email(), httpServletRequest);
+
+        return ResponseEntity
+                .ok(
+                        new MessageResponse("Password reset link has been sent to your email which is valid for 30 minutes. Please reset your password")
+                );
+    }
+
+    @Operation(
+            summary = "Reset password",
+            description = "Allows to change the password of an user"
+    )
+    @PostMapping("/reset-password")
+    public ResponseEntity<MessageResponse> resetPassword(
+            @Valid @RequestBody
+            ResetPasswordRequest resetPasswordRequest,
+            HttpServletRequest httpServletRequest
+    ) {
+
+        passwordResetService.resetPassword(
+                resetPasswordRequest.token(),
+                resetPasswordRequest.newPassword(),
+                httpServletRequest
+        );
+
+        return ResponseEntity
+                .ok(
+                        new MessageResponse("Your password has been changed successfully")
+                );
     }
 }
