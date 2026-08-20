@@ -2,6 +2,7 @@ package com.shortlyai.gateway.filter;
 
 import com.shortlyai.gateway.dto.ErrorResponse;
 import com.shortlyai.gateway.security.JwtUtil;
+import io.jsonwebtoken.Claims;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
@@ -15,7 +16,6 @@ import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
-import io.jsonwebtoken.Claims;
 import reactor.core.publisher.Mono;
 import tools.jackson.databind.json.JsonMapper;
 

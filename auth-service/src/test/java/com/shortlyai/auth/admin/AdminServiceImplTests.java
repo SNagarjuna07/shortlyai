@@ -1,11 +1,7 @@
 package com.shortlyai.auth.admin;
 
 import com.shortlyai.auth.dto.UserResponse;
-import com.shortlyai.auth.user.Provider;
-import com.shortlyai.auth.user.Role;
-import com.shortlyai.auth.user.User;
-import com.shortlyai.auth.user.UserMapper;
-import com.shortlyai.auth.user.UserRepository;
+import com.shortlyai.auth.user.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

@@ -1,6 +1,5 @@
 package com.shortlyai.ai.agent;
 
-import com.openai.models.evals.runs.RunListResponse;
 import com.shortlyai.ai.agent.dto.AgentResponse;
 import com.shortlyai.ai.agent.tools.AnalyticsServiceTools;
 import com.shortlyai.ai.agent.tools.UrlServiceTools;

@@ -3,8 +3,8 @@ package com.shortlyai.analytics.config;
 import io.micrometer.common.KeyValues;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.kafka.support.micrometer.KafkaTemplateObservation;
 import org.springframework.kafka.support.micrometer.KafkaRecordSenderContext;
+import org.springframework.kafka.support.micrometer.KafkaTemplateObservation;
 import org.springframework.kafka.support.micrometer.KafkaTemplateObservationConvention;
 
 // 4.1 auto-applies these to KafkaTemplate/listener container with zero extra wiring.

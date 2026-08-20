@@ -1,7 +1,6 @@
 package com.shortlyai.analytics.clicks;
 
 import com.shortlyai.analytics.events.UrlClickedEvent;
-import com.shortlyai.analytics.events.UrlCreatedEvent;
 import com.shortlyai.analytics.events.UrlDeletedEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
