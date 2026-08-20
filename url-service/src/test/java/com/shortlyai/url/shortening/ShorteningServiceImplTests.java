@@ -18,6 +18,8 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -27,6 +29,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -207,13 +210,49 @@ class ShorteningServiceImplTests {
 
         Url url = savedUrlFixture(20L, "todelete", false);
 
-        when(urlRepository.findByIdAndUserIdAndIsActiveTrue(20L, USER_ID)).thenReturn(Optional.of(url));
-        when(urlRepository.softDeleteByIdAndUserId(eq(20L), eq(USER_ID), any())).thenReturn(1);
+        when(urlRepository.findByIdAndUserIdAndIsActiveTrue(20L, USER_ID))
+                .thenReturn(Optional.of(url));
 
-        service.delete(20L, USER_ID);
+        when(urlRepository.softDeleteByIdAndUserId(
+                eq(20L),
+                eq(USER_ID),
+                any()
+        )).thenReturn(1);
 
-        verify(stringRedisTemplate).delete(CACHE_PREFIX + "todelete");
-        verify(urlEventPublisher).publishDeleted(url);
+        TransactionSynchronizationManager.initSynchronization();
+
+        try {
+            service.delete(20L, USER_ID);
+
+            // DB soft delete happens inside the transaction
+            verify(urlRepository).softDeleteByIdAndUserId(
+                    eq(20L),
+                    eq(USER_ID),
+                    any()
+            );
+
+            // Redis eviction is deferred until transaction commit
+            verify(stringRedisTemplate, never())
+                    .delete(CACHE_PREFIX + "todelete");
+
+            // Event is still published during the service method
+            verify(urlEventPublisher).publishDeleted(url);
+
+            List<TransactionSynchronization> synchronizations =
+                    TransactionSynchronizationManager.getSynchronizations();
+
+            assertEquals(1, synchronizations.size());
+
+            // Simulate successful transaction commit
+            synchronizations.get(0).afterCommit();
+
+            // Redis eviction happens only after commit
+            verify(stringRedisTemplate)
+                    .delete(CACHE_PREFIX + "todelete");
+
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
     }
 
     @Test
@@ -254,13 +293,49 @@ class ShorteningServiceImplTests {
 
         Url url = savedUrlFixture(22L, "byslug", false);
 
-        when(urlRepository.findBySlugAndUserIdAndIsActiveTrue("byslug", USER_ID)).thenReturn(Optional.of(url));
-        when(urlRepository.softDeleteBySlugAndUserId(eq("byslug"), eq(USER_ID), any())).thenReturn(1);
+        when(urlRepository.findBySlugAndUserIdAndIsActiveTrue("byslug", USER_ID))
+                .thenReturn(Optional.of(url));
 
-        service.deleteUrl("byslug", USER_ID);
+        when(urlRepository.softDeleteBySlugAndUserId(
+                eq("byslug"),
+                eq(USER_ID),
+                any()
+        )).thenReturn(1);
 
-        verify(stringRedisTemplate).delete(CACHE_PREFIX + "byslug");
-        verify(urlEventPublisher).publishDeleted(url);
+        TransactionSynchronizationManager.initSynchronization();
+
+        try {
+            service.deleteUrl("byslug", USER_ID);
+
+            // DB soft delete happens inside the transaction
+            verify(urlRepository).softDeleteBySlugAndUserId(
+                    eq("byslug"),
+                    eq(USER_ID),
+                    any()
+            );
+
+            // Redis eviction is deferred until transaction commit
+            verify(stringRedisTemplate, never())
+                    .delete(CACHE_PREFIX + "byslug");
+
+            // Event is still published during the service method
+            verify(urlEventPublisher).publishDeleted(url);
+
+            List<TransactionSynchronization> synchronizations =
+                    TransactionSynchronizationManager.getSynchronizations();
+
+            assertEquals(1, synchronizations.size());
+
+            // Simulate successful transaction commit
+            synchronizations.get(0).afterCommit();
+
+            // Redis eviction happens only after commit
+            verify(stringRedisTemplate)
+                    .delete(CACHE_PREFIX + "byslug");
+
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
     }
 
     @Test

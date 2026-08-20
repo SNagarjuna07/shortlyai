@@ -9,10 +9,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Instant;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
@@ -52,20 +55,45 @@ class ExpiryCleanupJobTests {
 
         when(urlRepository.findExpiredSlugs(any(Instant.class)))
                 .thenReturn(expiredSlugs);
+
         when(urlRepository.deactivateExpiredUrls(any(Instant.class)))
                 .thenReturn(3);
 
-        expiryCleanupJob.cleanupExpiredUrls();
+        TransactionSynchronizationManager.initSynchronization();
 
-        verify(urlRepository).deactivateExpiredUrls(any(Instant.class));
+        try {
+            expiryCleanupJob.cleanupExpiredUrls();
 
-        verify(stringRedisTemplate).delete(
-                List.of(
-                        "url:slug1",
-                        "url:slug2",
-                        "url:slug3"
-                )
-        );
+            verify(urlRepository).deactivateExpiredUrls(any(Instant.class));
+
+            // Redis eviction must not happen before transaction commit
+            verify(stringRedisTemplate, never()).delete(
+                    List.of(
+                            "url:slug1",
+                            "url:slug2",
+                            "url:slug3"
+                    )
+            );
+
+            List<TransactionSynchronization> synchronizations =
+                    TransactionSynchronizationManager.getSynchronizations();
+
+            assertEquals(1, synchronizations.size());
+
+            // Simulate successful transaction commit
+            synchronizations.get(0).afterCommit();
+
+            verify(stringRedisTemplate).delete(
+                    List.of(
+                            "url:slug1",
+                            "url:slug2",
+                            "url:slug3"
+                    )
+            );
+
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
     }
 
     @Test
@@ -75,13 +103,36 @@ class ExpiryCleanupJobTests {
 
         when(urlRepository.findExpiredSlugs(any(Instant.class)))
                 .thenReturn(expiredSlugs);
+
         when(urlRepository.deactivateExpiredUrls(any(Instant.class)))
                 .thenReturn(1);
 
-        expiryCleanupJob.cleanupExpiredUrls();
+        TransactionSynchronizationManager.initSynchronization();
 
-        verify(stringRedisTemplate).delete(
-                List.of("url:only-one")
-        );
+        try {
+            expiryCleanupJob.cleanupExpiredUrls();
+
+            verify(urlRepository).deactivateExpiredUrls(any(Instant.class));
+
+            // Redis eviction must not happen before transaction commit
+            verify(stringRedisTemplate, never()).delete(
+                    List.of("url:only-one")
+            );
+
+            List<TransactionSynchronization> synchronizations =
+                    TransactionSynchronizationManager.getSynchronizations();
+
+            assertEquals(1, synchronizations.size());
+
+            // Simulate successful transaction commit
+            synchronizations.get(0).afterCommit();
+
+            verify(stringRedisTemplate).delete(
+                    List.of("url:only-one")
+            );
+
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
     }
 }

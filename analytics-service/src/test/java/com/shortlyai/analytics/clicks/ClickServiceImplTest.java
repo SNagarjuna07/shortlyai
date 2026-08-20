@@ -13,6 +13,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Instant;
 import java.util.List;
@@ -20,6 +22,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -72,13 +75,32 @@ class ClickServiceImplTest {
 
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
 
-        clickService.processClick(event);
+        TransactionSynchronizationManager.initSynchronization();
 
-        verify(clickEventRepository).save(any(ClickEvent.class));
+        try {
+            clickService.processClick(event);
 
-        verify(bloomFilterService).markSeen(expectedFingerprint);
+            verify(clickEventRepository).save(any(ClickEvent.class));
 
-        verify(valueOperations).increment("clicks:realtime:42");
+            // These operations are deferred until transaction commit
+            verify(bloomFilterService, never()).markSeen(anyString());
+            verify(valueOperations, never()).increment(anyString());
+
+            List<TransactionSynchronization> synchronizations =
+                    TransactionSynchronizationManager.getSynchronizations();
+
+            assertEquals(1, synchronizations.size());
+
+            // Simulate successful transaction commit
+            synchronizations.get(0).afterCommit();
+
+            verify(bloomFilterService).markSeen(expectedFingerprint);
+
+            verify(valueOperations).increment("clicks:realtime:42");
+
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
     }
 
     @Test
@@ -103,17 +125,47 @@ class ClickServiceImplTest {
     @Test
     void processClick_nullClickedAt_fallsBackToNow_doesNotThrow() {
 
-        // event.clickedAt() is null — fingerprint building must not NPE
+        // event.clickedAt() is null - fingerprint building must not NPE
         UrlClickedEvent event = new UrlClickedEvent(
-                9L, "nullts", "ua", "iphash", "ref", "IN", "Mysuru", null, UUID.randomUUID());
+                9L,
+                "nullts",
+                "ua",
+                "iphash",
+                "ref",
+                "IN",
+                "Mysuru",
+                null,
+                UUID.randomUUID()
+        );
 
         when(bloomFilterService.isDuplicate(anyString())).thenReturn(false);
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
 
-        clickService.processClick(event);
+        TransactionSynchronizationManager.initSynchronization();
 
-        verify(clickEventRepository).save(any(ClickEvent.class));
-        verify(bloomFilterService).markSeen(anyString());
+        try {
+            clickService.processClick(event);
+
+            // Verify synchronization was registered
+            List<TransactionSynchronization> synchronizations =
+                    TransactionSynchronizationManager.getSynchronizations();
+
+            assertEquals(1, synchronizations.size());
+
+            // afterCommit() has not executed yet
+            verify(bloomFilterService, never()).markSeen(anyString());
+            verify(valueOperations, never()).increment(anyString());
+
+            // Simulate successful transaction commit
+            synchronizations.get(0).afterCommit();
+
+            verify(clickEventRepository).save(any(ClickEvent.class));
+            verify(bloomFilterService).markSeen(anyString());
+            verify(valueOperations).increment("clicks:realtime:9");
+
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
     }
 
     @Test
@@ -185,14 +237,40 @@ class ClickServiceImplTest {
     @Test
     void deleteClickData_removesPostgresRowsByUrlId_andRedisCounterAndOwnerKey() {
 
-        UrlDeletedEvent event = new UrlDeletedEvent(55L, "slug55", UUID.randomUUID(), Instant.now());
+        UrlDeletedEvent event = new UrlDeletedEvent(
+                55L,
+                "slug55",
+                UUID.randomUUID(),
+                Instant.now()
+        );
 
-        clickService.deleteClickData(event);
+        TransactionSynchronizationManager.initSynchronization();
 
-        verify(clickEventRepository).deleteByUrlId(55L);
+        try {
+            clickService.deleteClickData(event);
 
-        verify(redisTemplate).delete("clicks:realtime:55");
-        verify(redisTemplate).delete(OWNER_KEY_PREFIX + "55");
+            verify(clickEventRepository).deleteByUrlId(55L);
+            verify(clickHourlyRepository).deleteByUrlId(55L);
+            verify(urlOwnerRepository).deleteByUrlId(55L);
+
+            // Redis deletion must not happen before transaction commit
+            verify(redisTemplate, never()).delete("clicks:realtime:55");
+            verify(redisTemplate, never()).delete(OWNER_KEY_PREFIX + "55");
+
+            List<TransactionSynchronization> synchronizations =
+                    TransactionSynchronizationManager.getSynchronizations();
+
+            assertEquals(1, synchronizations.size());
+
+            // Simulate successful transaction commit
+            synchronizations.get(0).afterCommit();
+
+            verify(redisTemplate).delete("clicks:realtime:55");
+            verify(redisTemplate).delete(OWNER_KEY_PREFIX + "55");
+
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
     }
 
     @Test
