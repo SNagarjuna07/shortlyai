@@ -12,6 +12,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -129,9 +131,9 @@ public class ShorteningServiceImpl implements ShorteningService {
 
         Url finalSavedUrl = savedUrl;
 
-        org.springframework.transaction.support.TransactionSynchronizationManager
+        TransactionSynchronizationManager
                 .registerSynchronization(
-                        new org.springframework.transaction.support.TransactionSynchronization() {
+                        new TransactionSynchronization() {
 
                             @Override
                             public void afterCommit() {
@@ -287,7 +289,15 @@ public class ShorteningServiceImpl implements ShorteningService {
         log.info("Soft-deleted URL slug: {} by userId: {}", url.getSlug(), userId);
 
         // cache evict
-        stringRedisTemplate.delete(CACHE_PREFIX + url.getSlug());
+        TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+
+                    @Override
+                    public void afterCommit() {
+                        stringRedisTemplate.delete(CACHE_PREFIX + url.getSlug());
+                    }
+                }
+        );
 
         urlEventPublisher.publishDeleted(url);
     }
@@ -340,7 +350,15 @@ public class ShorteningServiceImpl implements ShorteningService {
         }
 
         // evict Redis cache
-        stringRedisTemplate.delete(CACHE_PREFIX + slug);
+        TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+
+                    @Override
+                    public void afterCommit() {
+                        stringRedisTemplate.delete(CACHE_PREFIX + slug);
+                    }
+                }
+        );
 
         urlEventPublisher.publishDeleted(url);
 

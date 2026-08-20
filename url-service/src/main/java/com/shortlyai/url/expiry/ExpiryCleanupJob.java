@@ -8,6 +8,8 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Instant;
 import java.util.List;
@@ -32,7 +34,6 @@ public class ExpiryCleanupJob {
 
         List<String> expiredSlugs = urlRepository.findExpiredSlugs(now);
 
-        // Check if it is empty
         if (expiredSlugs.isEmpty()) {
 
             log.info("No expired URLs found, skipping");
@@ -40,14 +41,19 @@ public class ExpiryCleanupJob {
             return;
         }
 
-        // Deactivate all in one query - efficient
         int count = urlRepository.deactivateExpiredUrls(now);
 
-        List<String> cacheKeys = expiredSlugs.stream()
-                .map(slug -> "url:" + slug)
-                .toList();
+        List<String> cacheKeys = expiredSlugs.stream().map(slug -> "url:" + slug).toList();
 
-        stringRedisTemplate.delete(cacheKeys);
+        TransactionSynchronizationManager
+                .registerSynchronization(new TransactionSynchronization() {
+
+                    @Override
+                    public void afterCommit() {
+
+                        stringRedisTemplate.delete(cacheKeys);
+                    }
+                });
 
         log.info("Expired URLs cleanup completed - deactivated {} URLs", count);
     }

@@ -37,29 +37,28 @@ public class ClickServiceImpl implements ClickService {
 
     @Transactional
     public void processClick(UrlClickedEvent event) {
-
-        Instant clickedAt = event.clickedAt() != null
-                ? event.clickedAt()
-                : Instant.now();
-
-        String fingerprint = event.urlId() + ":" + event.ipHash() + ":"
-                + (clickedAt.getEpochSecond() / 60);
+        Instant clickedAt = event.clickedAt() != null ? event.clickedAt() : Instant.now();
+        String fingerprint = event.urlId() + ":" + event.ipHash() + ":" + (clickedAt.getEpochSecond() / 60);
 
         if (bloomFilterService.isDuplicate(fingerprint)) {
-
             log.debug("Duplicate click detected for slug: {}, skipping", event.slug());
-
             return;
         }
 
         ClickEvent clickEvent = ClickEvent.from(event);
         clickEventRepository.save(clickEvent);
 
-        bloomFilterService.markSeen(fingerprint);
-
         String redisKey = "clicks:realtime:" + event.urlId();
 
-        redisTemplate.opsForValue().increment(redisKey);
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+
+                bloomFilterService.markSeen(fingerprint);
+
+                redisTemplate.opsForValue().increment(redisKey);
+            }
+        });
 
         log.debug("Processed click for slug: {} urlId: {}", event.slug(), event.urlId());
     }
@@ -126,14 +125,19 @@ public class ClickServiceImpl implements ClickService {
     public void deleteClickData(UrlDeletedEvent event) {
 
         clickEventRepository.deleteByUrlId(event.id());
-
         clickHourlyRepository.deleteByUrlId(event.id());
-
         urlOwnerRepository.deleteByUrlId(event.id());
 
-        redisTemplate.delete("clicks:realtime:" + event.id());
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
 
-        redisTemplate.delete(OWNER_KEY_PREFIX + event.id());
+            @Override
+            public void afterCommit() {
+
+                redisTemplate.delete("clicks:realtime:" + event.id());
+
+                redisTemplate.delete(OWNER_KEY_PREFIX + event.id());
+            }
+        });
 
         log.info("Deleted click data for slug: {} urlId: {}", event.slug(), event.id());
     }
