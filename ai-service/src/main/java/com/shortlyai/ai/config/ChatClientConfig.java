@@ -3,10 +3,13 @@ package com.shortlyai.ai.config;
 import com.shortlyai.ai.advisor.AvailableToolsAndMetricsAdvisor;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
+import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.Resource;
+
+import java.util.Map;
 
 @Configuration
 public class ChatClientConfig {
@@ -29,7 +32,14 @@ public class ChatClientConfig {
 
         return builder
                 .defaultSystem(systemPrompt)
-                .defaultAdvisors(new SimpleLoggerAdvisor(), availableToolsAndMetricsAdvisor)
+                .defaultAdvisors(
+                        new SimpleLoggerAdvisor(),
+                        availableToolsAndMetricsAdvisor
+                )
+                .defaultOptions(
+                        OpenAiChatOptions.builder()
+                                .extraBody(Map.of("include_reasoning", false)) // gpt-oss-120b is a reasoning model, so it is excluded
+                )
                 .build();
     }
 }
