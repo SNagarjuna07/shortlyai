@@ -7,5 +7,6 @@
 
     <!-- Master file - import migrations in order, never reorder these -->
     <include file="classpath:db/changelog/migrations/V001__create_ai_chat_memory_table.sql"/>
+    <include file="classpath:db/changelog/migrations/V002__add_sequence_id_to_ai_chat_memory.sql"/>
 
 </databaseChangeLog>
