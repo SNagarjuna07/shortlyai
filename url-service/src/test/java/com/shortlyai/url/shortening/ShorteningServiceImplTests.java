@@ -55,7 +55,6 @@ class ShorteningServiceImplTests {
     ShorteningServiceImpl service;
 
     private static final String BASE_DOMAIN = "http://localhost:8082";
-    private static final String API_PREFIX = "/api/v1";
     private static final long DEFAULT_EXPIRY_DAYS = 30;
     private static final long CACHE_TTL_SECONDS = 3600;
     private static final UUID USER_ID = UUID.randomUUID();
@@ -66,7 +65,7 @@ class ShorteningServiceImplTests {
 
         service = new ShorteningServiceImpl(
                 urlRepository, stringRedisTemplate, urlEventPublisher,
-                BASE_DOMAIN, API_PREFIX, DEFAULT_EXPIRY_DAYS, CACHE_TTL_SECONDS,
+                BASE_DOMAIN, DEFAULT_EXPIRY_DAYS, CACHE_TTL_SECONDS,
                 Runnable::run);
 
         when(stringRedisTemplate.opsForValue()).thenReturn(valueOps);

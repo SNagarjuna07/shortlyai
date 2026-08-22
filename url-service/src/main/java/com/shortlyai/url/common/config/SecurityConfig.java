@@ -1,7 +1,7 @@
 package com.shortlyai.url.common.config;
 
 import com.shortlyai.url.common.security.HeaderAuthFilter;
-import org.springframework.beans.factory.annotation.Value;
+import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -12,20 +12,10 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 @Configuration
+@RequiredArgsConstructor
 public class SecurityConfig {
 
     private final HeaderAuthFilter headerAuthFilter;
-
-    private final String apiPrefix;
-
-    public SecurityConfig(
-            HeaderAuthFilter headerAuthFilter,
-            @Value("${api.prefix}") String apiPrefix
-    ) {
-
-        this.headerAuthFilter = headerAuthFilter;
-        this.apiPrefix = apiPrefix;
-    }
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -48,8 +38,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
 
                         // Redirect endpoint is public - anyone can follow a short link
-                        // No auth header needed for GET /r/{slug}
-                        .requestMatchers(HttpMethod.GET, apiPrefix +"/r/**",
+                        .requestMatchers(HttpMethod.GET, "/r/**",
                                 "/actuator/**",
                                 "/swagger-ui.html",
                                 "/v3/api-docs/**",

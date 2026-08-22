@@ -14,10 +14,11 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-// Public controller — no authentication required
-// Anyone with the short URL can follow the redirect
+/* Public controller - no authentication required
+   Anyone with the short URL can follow the redirect
+*/
 @RestController
-@RequestMapping("${api.prefix}/r")
+@RequestMapping("/r")
 @RequiredArgsConstructor
 @Slf4j
 @Tag(name = "Redirect Controller")
@@ -26,7 +27,6 @@ public class RedirectController {
     // Interface injection - never the concrete impl
     private final ShorteningService shorteningService;
 
-    // GET /api/v1/r/{slug} - resolve slug to original URL and redirect
     // No @AuthenticationPrincipal - this endpoint is intentionally public
     @Operation(
             summary = "Redirect",
