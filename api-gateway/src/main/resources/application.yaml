@@ -53,10 +53,10 @@ spring:
                     name: urlServiceCB
                     fallbackUri: forward:/fallback/url-service
 
-            - id: url-service-redirect-api
-              uri: lb://url-service
+            - id: url-redirect-api
+              uri: lb://url-service         # redirect uses same service as url
               predicates:
-                - Path=/api/v1/r/**
+                - Path=/r/{slug}
 
               filters:
                 - name: CircuitBreaker
