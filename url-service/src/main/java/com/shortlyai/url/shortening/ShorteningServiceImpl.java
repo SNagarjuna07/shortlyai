@@ -35,8 +35,6 @@ public class ShorteningServiceImpl implements ShorteningService {
 
     private final String baseDomain;
 
-    private final String apiPrefix;
-
     private final long defaultExpiryDays;
 
     private final long cacheTtlSeconds;
@@ -46,7 +44,6 @@ public class ShorteningServiceImpl implements ShorteningService {
             StringRedisTemplate stringRedisTemplate,
             UrlEventPublisher urlEventPublisher,
             @Value("${url.base-domain}") String baseDomain,
-            @Value("${api.prefix}") String apiPrefix,
             @Value("${url.default-expiry-days}") long defaultExpiryDays,
             @Value("${url.cache-ttl-seconds}") long cacheTtlSeconds,
             Executor clickTrackingExecutor) {
@@ -56,7 +53,6 @@ public class ShorteningServiceImpl implements ShorteningService {
         this.urlEventPublisher = urlEventPublisher;
         this.clickTrackingExecutor = clickTrackingExecutor;
         this.baseDomain = baseDomain;
-        this.apiPrefix = apiPrefix;
         this.defaultExpiryDays = defaultExpiryDays;
         this.cacheTtlSeconds = cacheTtlSeconds;
     }
@@ -370,7 +366,7 @@ public class ShorteningServiceImpl implements ShorteningService {
         return new ShortenResponse(
                 u.getId(),
                 u.getSlug(),
-                baseDomain + apiPrefix + "/r/" + u.getSlug(),
+                baseDomain + "/r/" + u.getSlug(),
                 u.getOriginalUrl(),
                 u.getUserId(),
                 u.isCustom(),
